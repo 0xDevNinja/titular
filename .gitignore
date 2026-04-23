@@ -45,3 +45,6 @@ lcov.info
 .DS_Store
 *.log
 *.tmp
+
+# Next.js generated
+next-env.d.ts
