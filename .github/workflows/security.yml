@@ -60,7 +60,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.23"
       - run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - run: govulncheck ./...
         working-directory: services/${{ matrix.service }}
@@ -76,7 +76,7 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge build
         working-directory: contracts/evm
-      - uses: crytic/slither-action@v0.4
+      - uses: crytic/slither-action@v0.4.0
         with:
           target: contracts/evm
           slither-args: "--exclude-dependencies"
