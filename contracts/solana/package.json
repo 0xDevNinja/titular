@@ -1,0 +1,20 @@
+{
+  "name": "@titular/contracts-solana",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "anchor build",
+    "test": "anchor test --skip-local-validator",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.1"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.12",
+    "@types/mocha": "^10.0.7",
+    "chai": "^4.4.1",
+    "ts-mocha": "^10.0.0",
+    "typescript": "^5.4.5"
+  }
+}
