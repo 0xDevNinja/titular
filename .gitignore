@@ -38,6 +38,10 @@ coverage.txt
 coverage/
 lcov.info
 
+# Slither output
+slither.out.json
+contracts/evm/slither.out.json
+
 # Worktrees
 .worktrees/
 
