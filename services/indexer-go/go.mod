@@ -1,3 +1,3 @@
 module github.com/0xDevNinja/titular/services/indexer-go
 
-go 1.22
+go 1.23
