@@ -1,0 +1,12 @@
+[package]
+name = "titular-evaluator"
+version = "0.1.0"
+edition = "2021"
+description = "ACP evaluator worker service"
+
+[[bin]]
+name = "titular-evaluator"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }

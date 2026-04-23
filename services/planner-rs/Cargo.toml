@@ -1,0 +1,12 @@
+[package]
+name = "titular-planner"
+version = "0.1.0"
+edition = "2021"
+description = "GAME HLP + LLP planner service"
+
+[[bin]]
+name = "titular-planner"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }

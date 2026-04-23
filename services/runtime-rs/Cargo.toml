@@ -1,0 +1,12 @@
+[package]
+name = "titular-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Agent runtime service"
+
+[[bin]]
+name = "titular-runtime"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }

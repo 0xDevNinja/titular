@@ -4,8 +4,9 @@ members = [
   "services/runtime-rs",
   "services/planner-rs",
   "services/evaluator-rs",
-  "contracts/solana/programs/titular-stub",
 ]
+# contracts/solana/programs/* are built with cargo-build-sbf (Solana toolchain)
+# and are not included in the root workspace.
 
 [profile.release]
 opt-level = 3
