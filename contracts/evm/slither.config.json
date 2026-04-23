@@ -1,0 +1,8 @@
+{
+  "filter_paths": "lib|test|script",
+  "detectors_to_exclude": "solc-version,naming-convention,pragma",
+  "exclude_informational": true,
+  "exclude_low": false,
+  "exclude_medium": false,
+  "exclude_high": false
+}
