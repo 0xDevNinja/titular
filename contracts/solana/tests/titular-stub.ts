@@ -1,7 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { TitularStub } from "../target/types/titular_stub";
+import type { Program } from "@coral-xyz/anchor";
 import { assert } from "chai";
+import type { TitularStub } from "../target/types/titular_stub";
 
 describe("titular-stub", () => {
   const provider = anchor.AnchorProvider.env();
