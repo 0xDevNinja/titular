@@ -1,0 +1,19 @@
+[package]
+name = "titular-stub"
+version = "0.1.0"
+edition = "2021"
+description = "Anchor stub program for workspace verification"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "titular_stub"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = "0.30.1"
