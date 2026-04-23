@@ -1,0 +1,123 @@
+---
+# Local development stack.
+# All services bind to 127.0.0.1 only.
+# Start: docker compose -f infra/docker/compose.dev.yml up -d
+
+name: titular-dev
+
+networks:
+  titular-dev:
+    driver: bridge
+
+volumes:
+  pg-data:
+  redis-data:
+  nats-data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks:
+      - titular-dev
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: titular
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: titular_dev
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U titular -d titular_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - titular-dev
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  nats:
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    networks:
+      - titular-dev
+    ports:
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
+    command: ["--js", "--http_port", "8222"]
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    restart: unless-stopped
+    networks:
+      - titular-dev
+    ports:
+      - "127.0.0.1:8545:8545"
+    entrypoint:
+      - anvil
+      - --host
+      - "0.0.0.0"
+      - --chain-id
+      - "31337"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -sf -X POST http://localhost:8545
+          -H 'Content-Type: application/json'
+          -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
+          || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  solana-test-validator:
+    image: ghcr.io/anza-xyz/agave:v2.0.17
+    restart: unless-stopped
+    networks:
+      - titular-dev
+    ports:
+      - "127.0.0.1:8899:8899"
+      - "127.0.0.1:9900:9900"
+      - "127.0.0.1:1024:1024"
+    entrypoint:
+      - solana-test-validator
+      - --reset
+      - --rpc-port
+      - "8899"
+      - --faucet-port
+      - "9900"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -sf http://localhost:8899/health || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s

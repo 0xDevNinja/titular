@@ -1,0 +1,44 @@
+---
+name: pr-check
+
+on:
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint
+    uses: ./.github/workflows/lint.yml
+    secrets: inherit
+
+  test:
+    name: test
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
+
+  security:
+    name: security
+    uses: ./.github/workflows/security.yml
+    secrets: inherit
+
+  status:
+    name: all checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [lint, test, security]
+    if: always()
+    steps:
+      - name: summarise
+        run: |
+          if [[ "${{ needs.lint.result }}" == "success" && \
+                "${{ needs.test.result }}" == "success" && \
+                "${{ needs.security.result }}" == "success" ]]; then
+            echo "All checks passed."
+          else
+            echo "One or more checks failed."
+            exit 1
+          fi
