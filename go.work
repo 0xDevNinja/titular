@@ -1,0 +1,6 @@
+go 1.22
+
+use (
+	./services/gateway-go
+	./services/indexer-go
+)
