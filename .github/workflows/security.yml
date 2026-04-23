@@ -77,5 +77,25 @@ jobs:
       - uses: crytic/slither-action@v0.4.0
         with:
           target: contracts/evm
+          slither-config: contracts/evm/slither.config.json
           slither-args: "--exclude-dependencies"
-          fail-on: high
+          fail-on: medium
+
+  echidna:
+    name: echidna invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge build
+        working-directory: contracts/evm
+      - uses: crytic/echidna-action@v2
+        with:
+          files: contracts/evm
+          contract: TituInvariant
+          test-mode: property
+          test-limit: 200000
+        continue-on-error: true
