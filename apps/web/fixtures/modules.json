@@ -1,0 +1,109 @@
+[
+  {
+    "id": "AntiSniper",
+    "bit": 0,
+    "label": "Anti-Sniper",
+    "description": "Dynamic buy-tax decay from 99% to 1% over 100 blocks. Protects against launch snipers.",
+    "configFields": [
+      {
+        "key": "decayBlocks",
+        "label": "Decay blocks",
+        "type": "number",
+        "default": 100,
+        "min": 10,
+        "max": 1000
+      }
+    ]
+  },
+  {
+    "id": "SixtyDays",
+    "bit": 1,
+    "label": "60-Day Escrow",
+    "description": "Holds 70% of creator fees in escrow for 60 days. Creator can commit (unlock) or refund (redistribute).",
+    "configFields": []
+  },
+  {
+    "id": "CapitalFormation",
+    "bit": 2,
+    "label": "Capital Formation",
+    "description": "Triggers USDC payouts at FDV milestones: $2M, $10M, $50M, $160M.",
+    "configFields": [
+      {
+        "key": "beneficiary",
+        "label": "Beneficiary address",
+        "type": "address",
+        "default": ""
+      }
+    ]
+  },
+  {
+    "id": "Airdrop",
+    "bit": 3,
+    "label": "Airdrop",
+    "description": "Snapshots veTITU holders at launch and allocates up to 5% supply for Merkle-claim airdrop.",
+    "configFields": [
+      {
+        "key": "allocationBps",
+        "label": "Allocation (basis points, max 500)",
+        "type": "number",
+        "default": 500,
+        "min": 1,
+        "max": 500
+      }
+    ]
+  },
+  {
+    "id": "LaunchRadar",
+    "bit": 4,
+    "label": "Launch Radar",
+    "description": "Pre-launch visibility on the radar feed. Costs 100 TITU. Enforces a start-time gate.",
+    "configFields": [
+      {
+        "key": "startTime",
+        "label": "Start time (Unix timestamp)",
+        "type": "number",
+        "default": 0,
+        "min": 0,
+        "max": 9999999999
+      }
+    ]
+  },
+  {
+    "id": "PreBuy",
+    "bit": 5,
+    "label": "Pre-Buy",
+    "description": "Creator pre-buys up to 100% of supply with a custom vesting schedule.",
+    "configFields": [
+      {
+        "key": "preBuyTitu",
+        "label": "TITU to pre-buy",
+        "type": "number",
+        "default": 1000,
+        "min": 1,
+        "max": 42000
+      },
+      {
+        "key": "vestingDays",
+        "label": "Vesting period (days)",
+        "type": "number",
+        "default": 365,
+        "min": 1,
+        "max": 1825
+      }
+    ]
+  },
+  {
+    "id": "ExistingToken",
+    "bit": 6,
+    "label": "Existing Token",
+    "description": "Wraps an existing ERC-20 instead of minting a new AgentToken. Pairs with TITU via bonding curve.",
+    "configFields": [
+      {
+        "key": "tokenAddress",
+        "label": "Existing token address",
+        "type": "address",
+        "default": ""
+      }
+    ]
+  }
+]
