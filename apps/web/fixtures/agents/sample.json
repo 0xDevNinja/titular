@@ -1,0 +1,29 @@
+{
+  "slug": "sample",
+  "name": "AlphaBot",
+  "symbol": "ALPHA",
+  "description": "A DeFi research agent specialising in on-chain analytics and yield optimisation.",
+  "imageURI": "https://fixtures.titular.xyz/images/alphabot.png",
+  "creator": "0x1234567890abcdef1234567890abcdef12345678",
+  "tokenAddress": "0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa",
+  "curveAddress": "0xBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBb",
+  "moduleBitmap": 3,
+  "modules": ["AntiSniper", "SixtyDays"],
+  "graduated": false,
+  "virtualTituReserve": 30000,
+  "virtualAgentReserve": 1073000000,
+  "realTituReserve": 5000,
+  "realAgentReserve": 145800000,
+  "graduationThreshold": 42000,
+  "currentPrice": 0.0000458,
+  "marketCap": 45800,
+  "priceHistory": [
+    { "t": 1714000000, "price": 0.000028 },
+    { "t": 1714003600, "price": 0.000031 },
+    { "t": 1714007200, "price": 0.000035 },
+    { "t": 1714010800, "price": 0.000039 },
+    { "t": 1714014400, "price": 0.000042 },
+    { "t": 1714018000, "price": 0.000045 },
+    { "t": 1714021600, "price": 0.0000458 }
+  ]
+}
