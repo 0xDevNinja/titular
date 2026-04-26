@@ -64,7 +64,9 @@ contract FeeSplitterTest is Test {
         uint256 expectedBuyback = 200e18;
 
         vm.expectEmit(true, true, true, true);
-        emit FeeSplit(address(token), primary, FeeSplitter.Schedule.A, expectedPrimary, expectedTreasury, expectedBuyback);
+        emit FeeSplit(
+            address(token), primary, FeeSplitter.Schedule.A, expectedPrimary, expectedTreasury, expectedBuyback
+        );
 
         vm.prank(caller);
         splitter.split(address(token), AMOUNT, primary, FeeSplitter.Schedule.A);

@@ -55,7 +55,7 @@ contract FeeSplitter is AccessControl, ReentrancyGuard {
 
     enum Schedule {
         A, // 95 / 3 / 2
-        B  // 90 / 5 / 5
+        B // 90 / 5 / 5
     }
 
     // ─────────────────────────────────────────────────────────────
