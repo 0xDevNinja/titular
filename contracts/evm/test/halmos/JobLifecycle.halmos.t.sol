@@ -75,7 +75,7 @@ contract JobLifecycleSymbolic is Test {
                 registry: registry,
                 targetAgentId: 0, // open to any agent
                 token: address(token),
-                budget: 1_000e18,
+                budget: 1000e18,
                 deadline: uint64(block.timestamp + 7 days),
                 jobType: IJob.JobType.Direct,
                 evaluator: address(0),
@@ -85,7 +85,7 @@ contract JobLifecycleSymbolic is Test {
 
         // Pre-fund the Job clone so `_completeJob` / `cancel` / `expireJob` /
         // `resolveDispute(false)` can perform their `safeTransfer` legs.
-        token.mint(address(job), 1_000e18);
+        token.mint(address(job), 1000e18);
     }
 
     // ─────────────────────────────────────────────────────────────
