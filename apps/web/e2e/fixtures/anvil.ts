@@ -145,6 +145,16 @@ export function deployContracts(rpcUrl: string): AnvilAddresses {
     }
   );
 
+  // DeployPhase1 always writes deployments/base-sepolia.json (regardless of
+  // chainId). DeployPhase2 maps chainId 31337 -> deployments/local.json. Copy
+  // the Phase 1 artifact across so Phase 2's preflight finds it.
+  const phase1Src = path.join(deployDir, "base-sepolia.json");
+  const phase1Dst = path.join(deployDir, "local.json");
+  if (!fs.existsSync(phase1Src)) {
+    throw new Error(`Phase 1 deployment file not found at ${phase1Src}`);
+  }
+  fs.copyFileSync(phase1Src, phase1Dst);
+
   // Deploy mock Uniswap V2 infrastructure via a small inline cast call
   // sequence so Phase 2 can reference a real factory + router on anvil.
   // We use the mocks checked in under test/mocks/.
@@ -238,7 +248,7 @@ export interface AnvilAddresses {
  */
 function parseDeploymentJson(deployDir: string): AnvilAddresses {
   // DeployPhase2 writes <chainId>.json; anvil chain id is 31337.
-  const candidates = ["31337.json", "base-sepolia.json"];
+  const candidates = ["local.json", "31337.json", "base-sepolia.json"];
   let raw: string | undefined;
   for (const name of candidates) {
     const p = path.join(deployDir, name);
