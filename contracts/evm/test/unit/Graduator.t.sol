@@ -47,7 +47,7 @@ contract GraduatorTest is Test {
 
         grad = new Graduator(IUniswapV2Router02(address(router)), owner);
 
-        curve = new MockBondingCurve();
+        curve = new MockBondingCurve(address(0), address(0));
         curve.set(address(agent), address(quote), QUOTE_RESERVE, AGENT_RESERVE, false);
         curve.setGraduator(address(grad));
 

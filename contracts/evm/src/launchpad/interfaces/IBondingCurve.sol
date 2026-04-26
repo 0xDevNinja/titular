@@ -1,19 +1,37 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/// @title IBondingCurve
-/// @notice Minimal view + graduation surface of `BondingCurve` that downstream
-///         modules (graduator, fee router, launch-radar indexer) bind against
-///         without importing the full implementation and its OZ dependencies.
+/// @title  IBondingCurve
+/// @notice Minimal trade + view + graduation surface of `BondingCurve` that
+///         downstream modules (graduator, fee router, launch-radar indexer,
+///         pre-buy module) bind against without importing the full
+///         implementation and its OZ dependencies.
 /// @dev    Mirrors the subset of public/external signatures on
 ///         `src/launchpad/BondingCurve.sol` that live callers consume. Keep
-///         signatures and return ordering in lockstep.
+///         signatures and return ordering in lockstep with the implementation.
 interface IBondingCurve {
+    // ---------------------------------------------------------------------
+    // Token bindings
+    // ---------------------------------------------------------------------
+
     /// @notice Agent ERC-20 traded by this curve.
     function agentToken() external view returns (address);
 
     /// @notice Quote ERC-20 (TITU) used for trading and the LP seed.
     function quoteToken() external view returns (address);
+
+    // ---------------------------------------------------------------------
+    // Trading
+    // ---------------------------------------------------------------------
+
+    /// @notice Buy agent tokens from the curve.
+    /// @param  minAgentOut Slippage floor on agent tokens delivered to caller.
+    /// @param  quoteIn     Quote (TITU) wei pulled from the caller.
+    function buy(uint256 minAgentOut, uint256 quoteIn) external;
+
+    // ---------------------------------------------------------------------
+    // Graduation surface
+    // ---------------------------------------------------------------------
 
     /// @notice Flipped once `requestGraduation` has fired. Trading halts and
     ///         the graduator is permitted to pull reserves exactly once.
