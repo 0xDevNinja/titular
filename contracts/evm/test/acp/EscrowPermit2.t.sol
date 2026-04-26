@@ -8,7 +8,10 @@ import {IPermit2} from "../../src/acp/IPermit2.sol";
 
 contract MockToken is ERC20 {
     constructor() ERC20("Mock", "MCK") {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 contract MockPermit2 {
