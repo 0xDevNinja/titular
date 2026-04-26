@@ -84,17 +84,22 @@ export async function startAnvil(): Promise<string> {
       "--block-time",
       "0",
     ],
+    // "ignore" stdin; pipe stdout/stderr so the OS pipe buffer never blocks the
+    // child process. We drain both streams to /dev/null by attaching no-op
+    // listeners — this avoids the child stalling when the 64 KB pipe fills.
     { stdio: ["ignore", "pipe", "pipe"] }
   );
+
+  anvilProcess.stdout?.resume();
+  anvilProcess.stderr?.resume();
 
   anvilProcess.on("error", (err) => {
     console.error("[anvil] failed to start:", err.message);
   });
 
-  // Wait until the JSON-RPC socket is live before returning.
-  // waitForRpc polls eth_blockNumber (50 ms × 60 = 3 s max) and throws if
-  // anvil never comes up, preventing forge script from hitting ECONNREFUSED.
-  await waitForRpc(rpcUrl);
+  // Poll until the JSON-RPC socket is accepting connections.
+  // 300 attempts × 100 ms = 30 s — enough for CI runner cold-start.
+  await waitForRpc(rpcUrl, 300, 100);
 
   return rpcUrl;
 }
