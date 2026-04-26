@@ -177,24 +177,26 @@ function deployMockUniswap(rpcUrl: string): {
   uniswapFactory: string;
   uniswapRouter: string;
 } {
-  // `forge create --json` used `deployedTo` in foundry <1.5 and `address` in
-  // foundry >=1.5.1. Accept both to stay compatible across toolchain versions.
-  function extractAddress(json: string): string {
-    const parsed = JSON.parse(json) as Record<string, unknown>;
-    const addr = (parsed.address ?? parsed.deployedTo) as string | undefined;
-    if (!addr) throw new Error(`forge create JSON missing address field: ${json}`);
-    return addr;
+  // Parse the deployed address from `forge create` text output.
+  // The --json flag changed its schema across foundry versions (pre-1.5 had
+  // `deployedTo`, 1.5.1 outputs a transaction object with no address field).
+  // Parsing the human-readable "Deployed to: 0x..." line is stable across all
+  // foundry versions.
+  function extractAddress(output: string): string {
+    const match = output.match(/Deployed to:\s*(0x[0-9a-fA-F]{40})/);
+    if (!match) throw new Error(`forge create output missing "Deployed to:" line:\n${output}`);
+    return match[1];
   }
 
   const factoryOut = execSync(
-    `forge create test/mocks/MockUniswapV2Factory.sol:MockUniswapV2Factory --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY} --json`,
+    `forge create test/mocks/MockUniswapV2Factory.sol:MockUniswapV2Factory --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY}`,
     { cwd: CONTRACTS_DIR, stdio: "pipe" }
   ).toString();
 
   const factoryAddr = extractAddress(factoryOut);
 
   const routerOut = execSync(
-    `forge create test/mocks/MockUniswapV2Router.sol:MockUniswapV2Router --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY} --constructor-args ${factoryAddr} --json`,
+    `forge create test/mocks/MockUniswapV2Router.sol:MockUniswapV2Router --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY} --constructor-args ${factoryAddr}`,
     { cwd: CONTRACTS_DIR, stdio: "pipe" }
   ).toString();
 
