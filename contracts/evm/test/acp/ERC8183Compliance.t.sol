@@ -48,8 +48,10 @@ contract ERC8183ComplianceTest is Test {
     /// @notice `totalAgents` increments after each registration.
     function test_erc8183_totalAgents() public {
         assertEq(registry.totalAgents(), 0);
-        vm.prank(makeAddr("a")); registry.register(makeAddr("a"), "ipfs://A", 0);
-        vm.prank(makeAddr("b")); registry.register(makeAddr("b"), "ipfs://B", 0);
+        vm.prank(makeAddr("a"));
+        registry.register(makeAddr("a"), "ipfs://A", 0);
+        vm.prank(makeAddr("b"));
+        registry.register(makeAddr("b"), "ipfs://B", 0);
         assertEq(registry.totalAgents(), 2);
     }
 

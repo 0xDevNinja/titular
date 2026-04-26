@@ -97,14 +97,16 @@ contract DeployPhase3 is Script {
     }
 
     function _deployBuybackAndFees(
-        address admin, address paymentToken, address titu, address uniRouter, address treasury
+        address admin,
+        address paymentToken,
+        address titu,
+        address uniRouter,
+        address treasury
     ) internal {
         address[] memory swapPath = new address[](2);
         swapPath[0] = paymentToken;
         swapPath[1] = titu;
-        buybackBurner = new BuybackBurner(
-            admin, uniRouter, paymentToken, titu, swapPath, 9000, 300
-        );
+        buybackBurner = new BuybackBurner(admin, uniRouter, paymentToken, titu, swapPath, 9000, 300);
         console2.log("BuybackBurner:", address(buybackBurner));
 
         feeSplitter = new FeeSplitter(admin, treasury, address(buybackBurner));
@@ -159,5 +161,4 @@ contract DeployPhase3 is Script {
         vm.writeJson(finalJson, "deployments/phase3.json");
         console2.log("Deployment manifest written to deployments/phase3.json");
     }
-
 }
