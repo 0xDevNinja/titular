@@ -41,9 +41,12 @@ contract InvRouter {
         address tokenB,
         uint256 amountADesired,
         uint256 amountBDesired,
-        uint256 /*amountAMin*/,
-        uint256 /*amountBMin*/,
-        address /*to*/,
+        uint256,
+        /*amountAMin*/
+        uint256,
+        /*amountBMin*/
+        address,
+        /*to*/
         uint256 /*deadline*/
     ) external returns (uint256, uint256, uint256) {
         addLiquidityCalls += 1;
@@ -96,7 +99,7 @@ contract GraduationAtomicityHandler is Test {
     ///         in the pre-graduation regime AND occasionally hit the
     ///         threshold, so the invariant exercises both halves of the
     ///         state machine over a typical 100x100 invariant run.
-    uint256 public constant MAX_BUY = 5_000e18;
+    uint256 public constant MAX_BUY = 5000e18;
     uint256 public constant MIN_BUY = 1e15;
     uint256 public constant MAX_SELL = 5_000_000e18;
 

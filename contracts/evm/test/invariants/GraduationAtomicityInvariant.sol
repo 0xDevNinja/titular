@@ -10,12 +10,7 @@ import {Graduator} from "../../src/launchpad/Graduator.sol";
 import {LPLock} from "../../src/launchpad/LPLock.sol";
 import {IUniswapV2Router02} from "../../src/launchpad/interfaces/IUniswapV2Router02.sol";
 
-import {
-    GraduationAtomicityHandler,
-    MockToken,
-    InvRouter,
-    InvFactory
-} from "./handlers/GraduationAtomicityHandler.sol";
+import {GraduationAtomicityHandler, MockToken, InvRouter, InvFactory} from "./handlers/GraduationAtomicityHandler.sol";
 
 /// @title GraduationAtomicityInvariant
 /// @notice Forge invariant suite for the graduation hand-off — the most
