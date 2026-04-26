@@ -42,6 +42,13 @@ func (s *memStore) IsLogProcessed(_ context.Context, txHash common.Hash, logInde
 	return s.processed[logKey(txHash, logIndex)], nil
 }
 
+func (s *memStore) MarkLogProcessed(_ context.Context, txHash common.Hash, logIndex uint) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.processed[logKey(txHash, logIndex)] = true
+	return nil
+}
+
 func (s *memStore) UpsertAgent(_ context.Context, rec handlers.AgentRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -175,6 +182,10 @@ type errStore struct{}
 
 func (e *errStore) IsLogProcessed(_ context.Context, _ common.Hash, _ uint) (bool, error) {
 	return false, fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) MarkLogProcessed(_ context.Context, _ common.Hash, _ uint) error {
+	return fmt.Errorf("store unavailable")
 }
 
 func (e *errStore) UpsertAgent(_ context.Context, _ handlers.AgentRecord) error {

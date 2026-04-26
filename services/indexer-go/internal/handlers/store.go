@@ -197,6 +197,12 @@ type Store interface {
 	// idempotency.
 	IsLogProcessed(ctx context.Context, txHash common.Hash, logIndex uint) (bool, error)
 
+	// MarkLogProcessed records that a log identified by (txHash, logIndex) has
+	// been fully persisted. Handlers call this immediately after a successful
+	// write so that retries skip the log without re-applying delta-style
+	// mutations (e.g. InsertACPScore score deltas).
+	MarkLogProcessed(ctx context.Context, txHash common.Hash, logIndex uint) error
+
 	// UpsertAgent inserts or updates an agent record. On conflict the existing
 	// row is left unchanged (insert-if-not-exists semantics).
 	UpsertAgent(ctx context.Context, rec AgentRecord) error
