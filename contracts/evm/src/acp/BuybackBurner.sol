@@ -25,16 +25,18 @@ interface IERC20Burnable is IERC20 {
 
 /// @title BuybackBurner
 /// @notice Receives a payment token, swaps it for TITU on Uniswap V2, then burns
-///         the TITU using ERC20Burnable.burnFrom.
+///         the TITU using ERC20Burnable.burn.
 /// @dev    Role model:
 ///           - DEFAULT_ADMIN_ROLE: update router, path, and slippage parameters.
 ///           - EXECUTOR_ROLE: allowed to call `buybackAndBurn`.
 ///
-///         Slippage: caller supplies `amountOutMin`; the contract enforces a
-///         global floor `minOutBps` (in BPS of input amount) as an extra safety
-///         net. Set `minOutBps = 0` to disable the floor (not recommended).
+///         Slippage: caller supplies `amountOutMin` in TITU units (the output token).
+///         The admin-configurable `minTituOut` provides an absolute TITU floor; the
+///         effective minimum passed to the router is max(amountOutMin, minTituOut).
+///         Both quantities are expressed in TITU, ensuring dimensional consistency.
+///         Set `minTituOut = 0` to disable the floor (not recommended in production).
 ///
-///         CEI: safeApprove the router, then swap, then burn.  No state changes
+///         CEI: forceApprove the router, then swap, then burn.  No state changes
 ///         occur after the external calls, so ReentrancyGuard covers residual risk.
 contract BuybackBurner is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -44,12 +46,6 @@ contract BuybackBurner is AccessControl, ReentrancyGuard {
     // ─────────────────────────────────────────────────────────────
 
     bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
-
-    // ─────────────────────────────────────────────────────────────
-    // Constants
-    // ─────────────────────────────────────────────────────────────
-
-    uint256 public constant BPS = 10_000;
 
     // ─────────────────────────────────────────────────────────────
     // State
@@ -68,9 +64,12 @@ contract BuybackBurner is AccessControl, ReentrancyGuard {
     ///         and end with address(titu).  May include intermediate hops.
     address[] public swapPath;
 
-    /// @notice Minimum output in BPS of the input amount.  Acts as a global floor.
-    ///         E.g. 9000 = 90%. Set to 0 to disable.
-    uint256 public minOutBps;
+    /// @notice Minimum TITU output per swap (absolute amount, not BPS).
+    ///         The caller supplies `amountOutMin` to `buybackAndBurn`; this field
+    ///         is an admin-configurable hard floor expressed in TITU units so the
+    ///         comparison is dimensionally consistent (TITU out vs TITU floor).
+    ///         Set to 0 to disable the floor check.
+    uint256 public minTituOut;
 
     /// @notice Swap deadline extension in seconds added to block.timestamp.
     uint256 public immutable swapDeadlineBuffer;
@@ -88,8 +87,8 @@ contract BuybackBurner is AccessControl, ReentrancyGuard {
     /// @notice Emitted when swap path is updated.
     event SwapPathUpdated(address[] path);
 
-    /// @notice Emitted when min-out BPS floor is updated.
-    event MinOutBpsUpdated(uint256 oldBps, uint256 newBps);
+    /// @notice Emitted when the minimum TITU output floor is updated.
+    event MinTituOutUpdated(uint256 oldMin, uint256 newMin);
 
     // ─────────────────────────────────────────────────────────────
     // Errors
@@ -98,8 +97,7 @@ contract BuybackBurner is AccessControl, ReentrancyGuard {
     error ZeroAddress();
     error ZeroAmount();
     error InvalidSwapPath();
-    error InvalidBps();
-    error InsufficientAmountOut(uint256 amountIn, uint256 minOut, uint256 actualOut);
+    error RescuePaymentTokenForbidden();
 
     // ─────────────────────────────────────────────────────────────
     // Constructor
@@ -110,7 +108,7 @@ contract BuybackBurner is AccessControl, ReentrancyGuard {
     /// @param _paymentToken     ERC-20 received and swapped.
     /// @param _titu             TITU token address (must implement burnFrom).
     /// @param _swapPath         Initial swap path (must start with _paymentToken, end with _titu).
-    /// @param _minOutBps        Minimum output BPS (0–10 000).
+    /// @param _minTituOut       Minimum TITU output per swap in absolute TITU units (0 = no floor).
     /// @param _swapDeadlineBuffer Seconds added to block.timestamp for swap deadline.
     constructor(
         address admin,
@@ -118,21 +116,20 @@ contract BuybackBurner is AccessControl, ReentrancyGuard {
         address _paymentToken,
         address _titu,
         address[] memory _swapPath,
-        uint256 _minOutBps,
+        uint256 _minTituOut,
         uint256 _swapDeadlineBuffer
     ) {
         if (admin == address(0)) revert ZeroAddress();
         if (_router == address(0)) revert ZeroAddress();
         if (_paymentToken == address(0)) revert ZeroAddress();
         if (_titu == address(0)) revert ZeroAddress();
-        if (_minOutBps > BPS) revert InvalidBps();
         _validatePath(_swapPath, _paymentToken, _titu);
 
         router = IUniswapV2Router02(_router);
         paymentToken = _paymentToken;
         titu = IERC20Burnable(_titu);
         swapPath = _swapPath;
-        minOutBps = _minOutBps;
+        minTituOut = _minTituOut;
         swapDeadlineBuffer = _swapDeadlineBuffer;
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
@@ -145,21 +142,24 @@ contract BuybackBurner is AccessControl, ReentrancyGuard {
 
     /// @notice Swap all held `paymentToken` for TITU via Uniswap V2 and burn the TITU.
     /// @dev    Caller must hold EXECUTOR_ROLE.
-    /// @param  amountIn    Amount of paymentToken to swap.
-    /// @param  amountOutMin Minimum TITU out (caller's slippage tolerance).
+    ///         `amountOutMin` is expressed in TITU units (the same token that is received
+    ///         from the swap), making the slippage check dimensionally consistent.
+    ///         The admin-set `minTituOut` floor is also in TITU units; the effective floor
+    ///         passed to the router is max(amountOutMin, minTituOut).
+    /// @param  amountIn     Amount of paymentToken to swap.
+    /// @param  amountOutMin Caller's minimum TITU output (in TITU units).
     function buybackAndBurn(uint256 amountIn, uint256 amountOutMin) external nonReentrant onlyRole(EXECUTOR_ROLE) {
         if (amountIn == 0) revert ZeroAmount();
 
-        // Enforce global floor if configured
-        if (minOutBps > 0) {
-            uint256 floor = (amountIn * minOutBps) / BPS;
-            if (amountOutMin < floor) {
-                amountOutMin = floor;
-            }
+        // Enforce global TITU floor: both amountOutMin and minTituOut are in TITU
+        // units, making the comparison dimensionally consistent. Use the higher of
+        // the two as the effective minimum passed to the router.
+        uint256 floor = minTituOut;
+        if (floor > amountOutMin) {
+            amountOutMin = floor;
         }
 
         address _paymentToken = paymentToken;
-        address _titu = address(titu);
 
         // Record TITU balance before swap to calculate actual amount received
         uint256 tituBefore = titu.balanceOf(address(this));
@@ -205,20 +205,21 @@ contract BuybackBurner is AccessControl, ReentrancyGuard {
         emit SwapPathUpdated(path);
     }
 
-    /// @notice Update the minimum output BPS floor.
-    /// @param  newBps New BPS value (0–10 000).
-    function setMinOutBps(uint256 newBps) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (newBps > BPS) revert InvalidBps();
-        uint256 old = minOutBps;
-        minOutBps = newBps;
-        emit MinOutBpsUpdated(old, newBps);
+    /// @notice Update the minimum TITU output floor (absolute amount in TITU units).
+    /// @param  newMin New minimum TITU out (0 = no floor).
+    function setMinTituOut(uint256 newMin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 old = minTituOut;
+        minTituOut = newMin;
+        emit MinTituOutUpdated(old, newMin);
     }
 
-    /// @notice Rescue ERC-20 tokens accidentally sent to this contract (excludes paymentToken mid-swap).
-    /// @param  tokenAddr Token to rescue.
+    /// @notice Rescue ERC-20 tokens accidentally sent to this contract.
+    /// @dev    Rescuing `paymentToken` is forbidden to prevent draining mid-swap balances.
+    /// @param  tokenAddr Token to rescue (must not be paymentToken).
     /// @param  to        Recipient.
     /// @param  amount    Amount to rescue.
     function rescueTokens(address tokenAddr, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (tokenAddr == paymentToken) revert RescuePaymentTokenForbidden();
         if (to == address(0)) revert ZeroAddress();
         IERC20(tokenAddr).safeTransfer(to, amount);
     }
