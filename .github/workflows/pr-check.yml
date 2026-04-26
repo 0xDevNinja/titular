@@ -25,18 +25,45 @@ jobs:
     uses: ./.github/workflows/security.yml
     secrets: inherit
 
+  # Smoke E2E: launch → trade → graduate against local anvil.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.6.2"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm dlx playwright install chromium --with-deps
+      - run: forge build
+        working-directory: contracts/evm
+      - run: pnpm --filter @titular/web e2e
+        env:
+          CI: "true"
+          CONTRACTS_DIR: ${{ github.workspace }}/contracts/evm
+
   status:
     name: all checks
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [lint, test, security]
+    needs: [lint, test, security, e2e]
     if: always()
     steps:
       - name: summarise
         run: |
           if [[ "${{ needs.lint.result }}" == "success" && \
                 "${{ needs.test.result }}" == "success" && \
-                "${{ needs.security.result }}" == "success" ]]; then
+                "${{ needs.security.result }}" == "success" && \
+                "${{ needs.e2e.result }}" == "success" ]]; then
             echo "All checks passed."
           else
             echo "One or more checks failed."

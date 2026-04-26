@@ -1,0 +1,8 @@
+{
+  "txHash": "0xfixture00000000000000000000000000000000000000000000000000000001",
+  "amountIn": "100",
+  "amountOut": "2186521",
+  "isBuy": true,
+  "gasUsed": 142000,
+  "blockNumber": 18234567
+}

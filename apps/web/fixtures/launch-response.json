@@ -1,0 +1,9 @@
+{
+  "txHash": "0xdeadbeefcafe0000000000000000000000000000000000000000000000001234",
+  "agentId": "fixture-agent-001",
+  "agentSlug": "fixture-agent",
+  "tokenAddress": "0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa",
+  "curveAddress": "0xBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBb",
+  "gasUsed": 350000,
+  "blockNumber": 12345678
+}

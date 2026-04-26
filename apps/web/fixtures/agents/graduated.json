@@ -1,0 +1,30 @@
+{
+  "slug": "graduated",
+  "name": "GradBot",
+  "symbol": "GRAD",
+  "description": "An execution agent that reached graduation and now trades on Uniswap V2.",
+  "imageURI": "https://fixtures.titular.xyz/images/gradbot.png",
+  "creator": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "tokenAddress": "0xCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCc",
+  "curveAddress": "0xDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDd",
+  "uniswapPair": "0xEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEe",
+  "moduleBitmap": 7,
+  "modules": ["AntiSniper", "SixtyDays", "CapitalFormation"],
+  "graduated": true,
+  "virtualTituReserve": 30000,
+  "virtualAgentReserve": 1073000000,
+  "realTituReserve": 42000,
+  "realAgentReserve": 0,
+  "graduationThreshold": 42000,
+  "currentPrice": 0.000392,
+  "marketCap": 392000,
+  "priceHistory": [
+    { "t": 1714000000, "price": 0.000028 },
+    { "t": 1714007200, "price": 0.000062 },
+    { "t": 1714014400, "price": 0.000145 },
+    { "t": 1714021600, "price": 0.00022 },
+    { "t": 1714028800, "price": 0.000301 },
+    { "t": 1714036000, "price": 0.000358 },
+    { "t": 1714043200, "price": 0.000392 }
+  ]
+}

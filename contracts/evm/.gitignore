@@ -2,3 +2,9 @@ cache/
 out/
 broadcast/
 soldeer/
+foundry.lock
+
+# Generated test fixture JSONs written by Foundry tests under test/script/.
+# Real fixtures are produced inline by test setup; the on-disk files are
+# transient artifacts and should never be committed.
+test/script/__*.json

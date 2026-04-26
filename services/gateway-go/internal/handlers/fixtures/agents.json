@@ -1,0 +1,97 @@
+[
+  {
+    "id": "agent-001",
+    "slug": "sigma-7",
+    "name": "Sigma-7",
+    "symbol": "SIG7",
+    "image_uri": "ipfs://QmSigma7Image",
+    "creator": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+    "module_bitmap": 0,
+    "created_at": "2025-03-01T10:00:00Z",
+    "curve": {
+      "virtual_titu": "30000000000000000000000",
+      "virtual_agent": "1073000000000000000000000000",
+      "real_titu": "5000000000000000000000",
+      "real_agent": "989321000000000000000000000",
+      "graduated": false
+    },
+    "token_address": "0x1111111111111111111111111111111111111111",
+    "curve_address": "0x2222222222222222222222222222222222222222"
+  },
+  {
+    "id": "agent-002",
+    "slug": "nova-prime",
+    "name": "Nova Prime",
+    "symbol": "NOVA",
+    "image_uri": "ipfs://QmNovaPrimeImage",
+    "creator": "0xaBcD1234aBcD1234aBcD1234aBcD1234aBcD1234",
+    "module_bitmap": 3,
+    "created_at": "2025-03-05T14:30:00Z",
+    "curve": {
+      "virtual_titu": "30000000000000000000000",
+      "virtual_agent": "1073000000000000000000000000",
+      "real_titu": "42000000000000000000000",
+      "real_agent": "0",
+      "graduated": true
+    },
+    "token_address": "0x3333333333333333333333333333333333333333",
+    "curve_address": "0x4444444444444444444444444444444444444444"
+  },
+  {
+    "id": "agent-003",
+    "slug": "flux-dao",
+    "name": "FluxDAO",
+    "symbol": "FLUX",
+    "image_uri": "ipfs://QmFluxDAOImage",
+    "creator": "0xDeAdBeEfDeAdBeEfDeAdBeEfDeAdBeEfDeAdBeEf",
+    "module_bitmap": 1,
+    "created_at": "2025-03-10T08:15:00Z",
+    "curve": {
+      "virtual_titu": "30000000000000000000000",
+      "virtual_agent": "1073000000000000000000000000",
+      "real_titu": "12500000000000000000000",
+      "real_agent": "750000000000000000000000000",
+      "graduated": false
+    },
+    "token_address": "0x5555555555555555555555555555555555555555",
+    "curve_address": "0x6666666666666666666666666666666666666666"
+  },
+  {
+    "id": "agent-004",
+    "slug": "echo-labs",
+    "name": "Echo Labs",
+    "symbol": "ECHO",
+    "image_uri": "ipfs://QmEchoLabsImage",
+    "creator": "0xFfFfFfFfFfFfFfFfFfFfFfFfFfFfFfFfFfFfFfFf",
+    "module_bitmap": 6,
+    "created_at": "2025-03-15T16:45:00Z",
+    "curve": {
+      "virtual_titu": "30000000000000000000000",
+      "virtual_agent": "1073000000000000000000000000",
+      "real_titu": "38900000000000000000000",
+      "real_agent": "50000000000000000000000000",
+      "graduated": false
+    },
+    "token_address": "0x7777777777777777777777777777777777777777",
+    "curve_address": "0x8888888888888888888888888888888888888888"
+  },
+  {
+    "id": "agent-005",
+    "slug": "apex-oracle",
+    "name": "Apex Oracle",
+    "symbol": "APXO",
+    "image_uri": "ipfs://QmApexOracleImage",
+    "creator": "0xA1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1",
+    "module_bitmap": 12,
+    "created_at": "2025-03-20T11:00:00Z",
+    "curve": {
+      "virtual_titu": "30000000000000000000000",
+      "virtual_agent": "1073000000000000000000000000",
+      "real_titu": "42000000000000000000000",
+      "real_agent": "0",
+      "graduated": true
+    },
+    "token_address": "0x9999999999999999999999999999999999999999",
+    "curve_address": "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+]
