@@ -120,6 +120,12 @@ contract FeeRouterTest is Test {
         router.clearRoute(agent);
     }
 
+    function test_clearRoute_reverts_zero_agent() public {
+        vm.expectRevert(FeeRouter.ZeroAddress.selector);
+        vm.prank(owner);
+        router.clearRoute(address(0));
+    }
+
     function test_clearRoute_resets_state_and_emits() public {
         vm.prank(owner);
         router.setRoute(agent, creator, 7000);

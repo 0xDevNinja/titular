@@ -84,6 +84,59 @@ contract BondingCurveTest is Test {
         new BondingCurve(owner, address(agent), address(titu), feeRouter, 0, VIRTUAL_AGENT, THRESHOLD, INITIAL_AGENT);
     }
 
+    function test_constructor_reverts_on_zero_agent_token() public {
+        vm.expectRevert(BondingCurve.ZeroAddress.selector);
+        new BondingCurve(
+            owner, address(0), address(titu), feeRouter, VIRTUAL_QUOTE, VIRTUAL_AGENT, THRESHOLD, INITIAL_AGENT
+        );
+    }
+
+    function test_constructor_reverts_on_zero_quote_token() public {
+        vm.expectRevert(BondingCurve.ZeroAddress.selector);
+        new BondingCurve(
+            owner, address(agent), address(0), feeRouter, VIRTUAL_QUOTE, VIRTUAL_AGENT, THRESHOLD, INITIAL_AGENT
+        );
+    }
+
+    function test_constructor_reverts_on_zero_fee_router() public {
+        vm.expectRevert(BondingCurve.ZeroAddress.selector);
+        new BondingCurve(
+            owner, address(agent), address(titu), address(0), VIRTUAL_QUOTE, VIRTUAL_AGENT, THRESHOLD, INITIAL_AGENT
+        );
+    }
+
+    function test_constructor_reverts_zero_virtual_agent() public {
+        vm.expectRevert(BondingCurve.ZeroValue.selector);
+        new BondingCurve(owner, address(agent), address(titu), feeRouter, VIRTUAL_QUOTE, 0, THRESHOLD, INITIAL_AGENT);
+    }
+
+    function test_constructor_reverts_zero_threshold() public {
+        vm.expectRevert(BondingCurve.ZeroValue.selector);
+        new BondingCurve(
+            owner, address(agent), address(titu), feeRouter, VIRTUAL_QUOTE, VIRTUAL_AGENT, 0, INITIAL_AGENT
+        );
+    }
+
+    function test_constructor_reverts_zero_initial_agent() public {
+        vm.expectRevert(BondingCurve.ZeroValue.selector);
+        new BondingCurve(owner, address(agent), address(titu), feeRouter, VIRTUAL_QUOTE, VIRTUAL_AGENT, THRESHOLD, 0);
+    }
+
+    function test_constructor_reverts_invalid_reserves_equal() public {
+        // virtualAgent == initialAgent fails the strict-greater check.
+        vm.expectRevert(BondingCurve.InvalidReserves.selector);
+        new BondingCurve(
+            owner, address(agent), address(titu), feeRouter, VIRTUAL_QUOTE, INITIAL_AGENT, THRESHOLD, INITIAL_AGENT
+        );
+    }
+
+    function test_constructor_reverts_invalid_reserves_less_than() public {
+        vm.expectRevert(BondingCurve.InvalidReserves.selector);
+        new BondingCurve(
+            owner, address(agent), address(titu), feeRouter, VIRTUAL_QUOTE, INITIAL_AGENT - 1, THRESHOLD, INITIAL_AGENT
+        );
+    }
+
     // ---------------------------------------------------------------------
     // Quote math
     // ---------------------------------------------------------------------
@@ -100,6 +153,18 @@ contract BondingCurveTest is Test {
         (uint256 agentOut, uint256 fee) = curve.quoteBuy(quoteIn);
         assertEq(fee, expectedFee, "fee mismatch");
         assertEq(agentOut, expectedOut, "agent out mismatch");
+    }
+
+    function test_quoteBuy_returns_zero_for_zero_input() public view {
+        (uint256 agentOut, uint256 fee) = curve.quoteBuy(0);
+        assertEq(agentOut, 0, "agentOut should be 0");
+        assertEq(fee, 0, "fee should be 0");
+    }
+
+    function test_quoteSell_returns_zero_for_zero_input() public view {
+        (uint256 quoteOut, uint256 fee) = curve.quoteSell(0);
+        assertEq(quoteOut, 0, "quoteOut should be 0");
+        assertEq(fee, 0, "fee should be 0");
     }
 
     function test_quoteSell_formula_matches_manual_calc() public {
@@ -457,5 +522,199 @@ contract BondingCurveTest is Test {
         curve.setGraduator(grad);
         _reachThreshold();
         curve.requestGraduation();
+    }
+}
+
+/// @dev ERC-20 mock that re-enters the bonding curve on `transferFrom`. Used to
+///      probe the {ReentrancyGuard} on `buy`/`sell`/`pullForGraduation`. The
+///      reentry callback is configurable so each test targets a single entry
+///      point.
+contract ReentrantToken is ERC20 {
+    BondingCurve public curve;
+    bool public attack;
+    bytes public payload;
+
+    constructor() ERC20("R", "R") {}
+
+    function mint(address to, uint256 amt) external {
+        _mint(to, amt);
+    }
+
+    function arm(BondingCurve c, bytes memory p) external {
+        curve = c;
+        payload = p;
+        attack = true;
+    }
+
+    function transferFrom(address from, address to, uint256 amt) public override returns (bool) {
+        if (attack) {
+            attack = false; // single-shot — guards against infinite recursion if guard somehow allows it
+            (bool ok, bytes memory ret) = address(curve).call(payload);
+            // bubble revert reason if any, so the test sees the guard error.
+            if (!ok) {
+                assembly {
+                    revert(add(ret, 0x20), mload(ret))
+                }
+            }
+        }
+        return super.transferFrom(from, to, amt);
+    }
+}
+
+/// @dev Edge-case suite that constructs intentionally skewed curves to exercise
+///      the defensive `agentOut == 0`, `agentOut > realAgentReserve`,
+///      `quoteOut == 0`, and `grossQuoteOut > realQuoteReserve` reverts that the
+///      production parameter set never reaches. Each test builds a fresh curve
+///      tuned to push the math into the relevant guard.
+contract BondingCurveEdgeTest is Test {
+    MockERC20 internal titu;
+    MockERC20 internal agent;
+
+    address internal owner = address(0xA0);
+    address internal feeRouter = address(0xFEE);
+    address internal alice = address(0xA11CE);
+
+    function setUp() public {
+        titu = new MockERC20("TITU", "TITU");
+        agent = new MockERC20("AGENT", "AGT");
+        titu.mint(alice, type(uint128).max);
+        agent.mint(alice, type(uint128).max);
+    }
+
+    /// @dev Build a curve with the given parameters and approve transfers from alice.
+    function _build(uint256 vQuote, uint256 vAgent, uint256 threshold, uint256 initialAgent)
+        internal
+        returns (BondingCurve c)
+    {
+        c = new BondingCurve(owner, address(agent), address(titu), feeRouter, vQuote, vAgent, threshold, initialAgent);
+        agent.mint(address(c), initialAgent);
+        vm.prank(alice);
+        titu.approve(address(c), type(uint256).max);
+        vm.prank(alice);
+        agent.approve(address(c), type(uint256).max);
+    }
+
+    /// @dev With a curve where Y is much smaller than X, a 1-wei buy floor-divides
+    ///      to `agentOut == 0`. Asserts the defensive `InsufficientOutput` revert
+    ///      fires on this corner.
+    function test_buy_reverts_when_agent_out_rounds_to_zero() public {
+        // X = 1e30 (huge virtual quote), Y = ~1 (after offset). agentOut = (Y * dx') / (X + dx').
+        // For dx' = 1 wei → agentOut = (1 * 1) / (1e30 + 1) = 0.
+        BondingCurve c = _build(1e30, 2, 1e30, 1);
+        vm.prank(alice);
+        vm.expectRevert(BondingCurve.InsufficientOutput.selector);
+        c.buy(0, 1);
+    }
+
+    /// @dev With a low physical inventory but a much larger pricing-Y (offset),
+    ///      a buy can compute an `agentOut` that exceeds `realAgentReserve`.
+    ///      The curve must reject this rather than under-deliver.
+    function test_buy_reverts_when_agent_out_exceeds_real_reserve() public {
+        // virtualAgent = 1e30, initialAgent = 1. Offset = ~1e30.
+        // For a non-trivial dx', agentOut ≈ Y_eff (~1e30) ≫ realAgent (1).
+        BondingCurve c = _build(1e18, 1e30, 1e30, 1);
+        vm.prank(alice);
+        vm.expectRevert(BondingCurve.InsufficientOutput.selector);
+        c.buy(0, 1e18);
+    }
+
+    /// @dev With a tiny `agentIn` against a large `yPlus`, `grossOut` floors to 0
+    ///      and the sell defensive guard fires.
+    function test_sell_reverts_when_quote_out_rounds_to_zero() public {
+        // Curve where realQuote is non-zero so a sell is even reachable.
+        BondingCurve c = _build(1e18, 2e30, 1e30, 1e30);
+        // Seed real quote so the sell math has something to draw from.
+        vm.prank(alice);
+        c.buy(0, 1e18);
+        // 1 wei agent in: grossOut = (X * 1) / (Y + 1) where Y ≈ 2e30 → 0.
+        vm.prank(alice);
+        vm.expectRevert(BondingCurve.InsufficientOutput.selector);
+        c.sell(1, 0);
+    }
+
+    /// @dev With a virtualQuote that dominates realQuote, the gross-out from a
+    ///      large sell can exceed `realQuoteReserve`. The curve must refuse to
+    ///      pay out more than it physically holds.
+    function test_sell_reverts_when_gross_exceeds_real_quote() public {
+        // Large virtualQuote vs small realQuote. Pricing yields large grossOut on a
+        // big agentIn but only realQuote is available to pay out.
+        BondingCurve c = _build(1_000_000e18, 2_000_000e18, 1e30, 1_000_000e18);
+        // Buy a small amount so realQuote is small.
+        vm.prank(alice);
+        c.buy(0, 1e18);
+        // Now sell a huge agentIn — gross > realQuote.
+        uint256 huge = 500_000e18;
+        vm.prank(alice);
+        vm.expectRevert(BondingCurve.InsufficientOutput.selector);
+        c.sell(huge, 0);
+    }
+
+    // ---------------------------------------------------------------------
+    // Reentrancy probes
+    // ---------------------------------------------------------------------
+
+    /// @dev A malicious quote token re-enters `buy` from inside its own
+    ///      `transferFrom`. The {ReentrancyGuard} on `buy` must refuse the
+    ///      nested call.
+    function test_buy_reentrancy_guarded() public {
+        ReentrantToken evilQuote = new ReentrantToken();
+        evilQuote.mint(alice, 1_000_000e18);
+
+        BondingCurve c = new BondingCurve(
+            owner,
+            address(agent),
+            address(evilQuote),
+            feeRouter,
+            30_000e18,
+            1_073_000_000e18,
+            42_000e18,
+            1_000_000_000e18
+        );
+        agent.mint(address(c), 1_000_000_000e18);
+
+        vm.prank(alice);
+        evilQuote.approve(address(c), type(uint256).max);
+
+        // Arm the token to re-enter buy from transferFrom.
+        evilQuote.arm(c, abi.encodeWithSelector(BondingCurve.buy.selector, uint256(0), uint256(1e18)));
+
+        vm.prank(alice);
+        // OZ ReentrancyGuard reverts with `ReentrancyGuardReentrantCall()`. We don't
+        // pin the selector to avoid coupling to OZ internals across versions.
+        vm.expectRevert();
+        c.buy(0, 1e18);
+    }
+
+    /// @dev Same probe targeting `sell` via the agent token's transferFrom hook.
+    function test_sell_reentrancy_guarded() public {
+        ReentrantToken evilAgent = new ReentrantToken();
+        evilAgent.mint(alice, 1_000_000e18);
+
+        BondingCurve c = new BondingCurve(
+            owner,
+            address(evilAgent),
+            address(titu),
+            feeRouter,
+            30_000e18,
+            1_073_000_000e18,
+            42_000e18,
+            1_000_000_000e18
+        );
+        evilAgent.mint(address(c), 1_000_000_000e18);
+
+        vm.prank(alice);
+        titu.approve(address(c), type(uint256).max);
+        // Need realQuote on the curve so sell quote-out math is non-zero.
+        vm.prank(alice);
+        c.buy(0, 1000e18);
+
+        vm.prank(alice);
+        evilAgent.approve(address(c), type(uint256).max);
+
+        evilAgent.arm(c, abi.encodeWithSelector(BondingCurve.sell.selector, uint256(1e18), uint256(0)));
+
+        vm.prank(alice);
+        vm.expectRevert();
+        c.sell(1e18, 0);
     }
 }
