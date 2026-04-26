@@ -20,6 +20,39 @@ import {ExistingTokenModule} from "../src/launchpad/modules/ExistingTokenModule.
 
 import {IUniswapV2Router02} from "../src/launchpad/interfaces/IUniswapV2Router02.sol";
 
+import {Vm} from "forge-std/Vm.sol";
+
+/// @dev Side-car helper that owns every cheatcode wrapper that needs to be
+///      reachable via `try/catch`. The wrappers MUST live on a non-Script
+///      contract: foundry's script execution inspector reverts whenever the
+///      ADDRESS opcode (i.e. `address(this)`) executes inside the main script
+///      contract, and a `try this.foo()` self-call compiles into ADDRESS to
+///      build the calldata target. Hosting the wrappers on a separate contract
+///      sidesteps the inspector while preserving the revert-to-zero semantics.
+contract DeployPhase2Helper {
+    /// @notice Canonical foundry cheatcode address.
+    Vm private constant VM = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+
+    /// @dev Forward an env-address read. Reverts when the env value cannot be
+    ///      parsed; the caller wraps in try/catch and folds the failure to
+    ///      `address(0)`.
+    function envAddress(string calldata name) external view returns (address) {
+        return VM.envAddress(name);
+    }
+
+    /// @dev Forward a `parseJsonAddress` read. Reverts on parse failure (e.g.
+    ///      JSON `null` bound to the key); caller folds via try/catch.
+    function parseAddress(string calldata json, string calldata key) external view returns (address) {
+        return VM.parseJsonAddress(json, key);
+    }
+
+    /// @dev Forward a `parseJsonUint` read. Reverts on parse failure; caller
+    ///      folds via try/catch to a zero-fallback.
+    function parseUint(string calldata json, string calldata key) external view returns (uint256) {
+        return VM.parseJsonUint(json, key);
+    }
+}
+
 /// @notice Phase-2 deployment script.
 /// @dev    Deployment topology:
 ///           1. AgentToken implementation (EIP-1167 master copy).
@@ -66,6 +99,18 @@ import {IUniswapV2Router02} from "../src/launchpad/interfaces/IUniswapV2Router02
 ///         Legacy Phase-1-only files (top-level `contracts`) are auto-migrated
 ///         into the `phase1` key on first Phase-2 run.
 contract DeployPhase2 is Script {
+    /// @notice Side-car instance that owns every cheatcode try/catch wrapper.
+    DeployPhase2Helper internal helper;
+
+    /// @dev Lazy-init the side-car. Constructors on Script subclasses are
+    ///      invoked by both `forge script` and the in-repo unit tests; the
+    ///      `new` in here happens BEFORE any state-mutating step in the
+    ///      script, so the helper is always live by the time `runWith`
+    ///      executes its first cheatcode.
+    constructor() {
+        helper = new DeployPhase2Helper();
+    }
+
     /// @notice Phase-2 deployed contract set. Mirrors the JSON keys.
     struct Phase2Deployment {
         address agentTokenImpl;
@@ -166,7 +211,18 @@ contract DeployPhase2 is Script {
         //    re-run does not redeploy what is already live.
         Phase2Deployment memory existing = _readExistingPhase2(existingJson);
 
-        if (pk != 0) vm.startBroadcast(pk);
+        // In production (pk != 0) use vm.startBroadcast so external
+        // wire-up calls (`setModule`, `transferOwnership`) are sent from the
+        // deployer EOA. In test mode (pk == 0) use vm.startPrank with the same
+        // intent: rewrite msg.sender of subsequent external calls to be the
+        // deployer (which equals the test contract / factory owner / graduator
+        // owner). Without this, the factory's owner check fails because
+        // msg.sender resolves to this script contract.
+        if (pk != 0) {
+            vm.startBroadcast(pk);
+        } else {
+            vm.startPrank(deployer);
+        }
 
         // --- Logic contracts -------------------------------------------------
         d.agentTokenImpl = _hasCode(existing.agentTokenImpl) ? existing.agentTokenImpl : address(new AgentToken());
@@ -250,7 +306,11 @@ contract DeployPhase2 is Script {
             graduator.transferOwnership(d.launchpadFactory);
         }
 
-        if (pk != 0) vm.stopBroadcast();
+        if (pk != 0) {
+            vm.stopBroadcast();
+        } else {
+            vm.stopPrank();
+        }
 
         // --- Persist ---------------------------------------------------------
         _writeMergedDeployment(path, phase1, d);
@@ -301,18 +361,11 @@ contract DeployPhase2 is Script {
     ///      current call.
     function _envAddress(string memory name) internal view returns (address) {
         if (!vm.envExists(name)) return address(0);
-        try this.envAddressExternal(name) returns (address a) {
+        try helper.envAddress(name) returns (address a) {
             return a;
         } catch {
             return address(0);
         }
-    }
-
-    /// @dev External wrapper used by {_envAddress}'s `try/catch`. Foundry's
-    ///      `envAddress` reverts when the value cannot be parsed; we want a
-    ///      typed `address(0)` instead.
-    function envAddressExternal(string memory name) external view returns (address) {
-        return vm.envAddress(name);
     }
 
     /// @dev Try the merged-shape key (`phase1.contracts.<name>`) first, then
@@ -344,7 +397,7 @@ contract DeployPhase2 is Script {
     ///      required.
     function _safeParseAddress(string memory json, string memory key) internal view returns (address) {
         if (!vm.keyExistsJson(json, key)) return address(0);
-        try this.parseAddressExternal(json, key) returns (address a) {
+        try helper.parseAddress(json, key) returns (address a) {
             return a;
         } catch {
             return address(0);
@@ -353,22 +406,11 @@ contract DeployPhase2 is Script {
 
     function _safeParseUint(string memory json, string memory key) internal view returns (uint256) {
         if (!vm.keyExistsJson(json, key)) return 0;
-        try this.parseUintExternal(json, key) returns (uint256 v) {
+        try helper.parseUint(json, key) returns (uint256 v) {
             return v;
         } catch {
             return 0;
         }
-    }
-
-    /// @dev External wrappers used by {_safeParseAddress}/{_safeParseUint}'s
-    ///      `try` blocks. Marked external so the EVM dispatches them as
-    ///      separate frames and a parse-time revert can be caught.
-    function parseAddressExternal(string memory json, string memory key) external pure returns (address) {
-        return vm.parseJsonAddress(json, key);
-    }
-
-    function parseUintExternal(string memory json, string memory key) external pure returns (uint256) {
-        return vm.parseJsonUint(json, key);
     }
 
     /// @dev Codehash != 0 for any deployed contract; address(0) hashes to 0

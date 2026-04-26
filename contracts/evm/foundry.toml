@@ -7,10 +7,6 @@ optimizer = true
 optimizer_runs = 10000
 via_ir = false
 bytecode_hash = "none"
-# foundry >=1.5.1 added a lint rule that flags address(this) in any contract
-# that is part of a script's compilation unit, including legitimately deployed
-# implementation contracts. Disable lint here; slither covers security checks.
-lint = false
 remappings = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
   "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
