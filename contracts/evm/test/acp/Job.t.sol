@@ -244,7 +244,7 @@ contract JobTest is Test {
     function test_accept_revert_wrongAgent() public {
         Job j = _newJob(IJob.JobType.Direct, address(0));
         vm.expectRevert(abi.encodeWithSelector(Job.AgentNotFound.selector, agentId0));
-        vm.prank(stranger);  // stranger doesn't control agentId0
+        vm.prank(stranger); // stranger doesn't control agentId0
         j.accept(agentId0);
     }
 
@@ -319,7 +319,7 @@ contract JobTest is Test {
 
         // Advance past grace
         vm.warp(block.timestamp + j.RELEASE_GRACE() + 1);
-        j.release();  // anyone can call
+        j.release(); // anyone can call
         assertEq(uint8(j.phase()), uint8(IJob.Phase.Completed));
     }
 
