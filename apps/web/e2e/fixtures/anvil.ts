@@ -177,19 +177,28 @@ function deployMockUniswap(rpcUrl: string): {
   uniswapFactory: string;
   uniswapRouter: string;
 } {
+  // `forge create --json` used `deployedTo` in foundry <1.5 and `address` in
+  // foundry >=1.5.1. Accept both to stay compatible across toolchain versions.
+  function extractAddress(json: string): string {
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    const addr = (parsed.address ?? parsed.deployedTo) as string | undefined;
+    if (!addr) throw new Error(`forge create JSON missing address field: ${json}`);
+    return addr;
+  }
+
   const factoryOut = execSync(
     `forge create test/mocks/MockUniswapV2Factory.sol:MockUniswapV2Factory --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY} --json`,
     { cwd: CONTRACTS_DIR, stdio: "pipe" }
   ).toString();
 
-  const factoryAddr: string = JSON.parse(factoryOut).deployedTo;
+  const factoryAddr = extractAddress(factoryOut);
 
   const routerOut = execSync(
     `forge create test/mocks/MockUniswapV2Router.sol:MockUniswapV2Router --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY} --constructor-args ${factoryAddr} --json`,
     { cwd: CONTRACTS_DIR, stdio: "pipe" }
   ).toString();
 
-  const routerAddr: string = JSON.parse(routerOut).deployedTo;
+  const routerAddr = extractAddress(routerOut);
 
   return { uniswapFactory: factoryAddr, uniswapRouter: routerAddr };
 }
