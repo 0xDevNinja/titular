@@ -177,30 +177,35 @@ function deployMockUniswap(rpcUrl: string): {
   uniswapFactory: string;
   uniswapRouter: string;
 } {
-  // Parse the deployed address from `forge create` text output.
-  // The --json flag changed its schema across foundry versions (pre-1.5 had
-  // `deployedTo`, 1.5.1 outputs a transaction object with no address field).
-  // Parsing the human-readable "Deployed to: 0x..." line is stable across all
-  // foundry versions.
+  // foundry >=1.5.1 requires --broadcast to actually send the tx (without it
+  // forge create only simulates). After broadcast the receipt line
+  // "Deployed to: 0x..." appears on stdout. Capture stdout+stderr together
+  // via shell 2>&1 so the regex works regardless of which fd foundry uses.
+  function forgeCreate(args: string): string {
+    return execSync(`forge create ${args} --broadcast 2>&1`, {
+      cwd: CONTRACTS_DIR,
+      shell: true,
+      stdio: "pipe",
+    }).toString();
+  }
+
   function extractAddress(output: string): string {
     const match = output.match(/Deployed to:\s*(0x[0-9a-fA-F]{40})/);
     if (!match) throw new Error(`forge create output missing "Deployed to:" line:\n${output}`);
     return match[1];
   }
 
-  const factoryOut = execSync(
-    `forge create test/mocks/MockUniswapV2Factory.sol:MockUniswapV2Factory --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY}`,
-    { cwd: CONTRACTS_DIR, stdio: "pipe" }
-  ).toString();
+  const factoryAddr = extractAddress(
+    forgeCreate(
+      `test/mocks/MockUniswapV2Factory.sol:MockUniswapV2Factory --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY}`
+    )
+  );
 
-  const factoryAddr = extractAddress(factoryOut);
-
-  const routerOut = execSync(
-    `forge create test/mocks/MockUniswapV2Router.sol:MockUniswapV2Router --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY} --constructor-args ${factoryAddr}`,
-    { cwd: CONTRACTS_DIR, stdio: "pipe" }
-  ).toString();
-
-  const routerAddr = extractAddress(routerOut);
+  const routerAddr = extractAddress(
+    forgeCreate(
+      `test/mocks/MockUniswapV2Router.sol:MockUniswapV2Router --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY} --constructor-args ${factoryAddr}`
+    )
+  );
 
   return { uniswapFactory: factoryAddr, uniswapRouter: routerAddr };
 }
