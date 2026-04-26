@@ -157,7 +157,10 @@ contract DeployPhase2 is Script {
         address uniRouter = uniRouter_;
 
         uint256 pk = vm.envOr("DEPLOYER_PRIVATE_KEY", uint256(0));
-        address deployer = pk == 0 ? address(this) : vm.addr(pk);
+        // When running with --unlocked / no private key, use msg.sender (the
+        // default sender). address(this) is banned in script contracts by
+        // foundry >=1.5.1 because script contracts are ephemeral.
+        address deployer = pk == 0 ? msg.sender : vm.addr(pk);
 
         // 3. Recover any Phase-2 entries that already exist on the JSON so a
         //    re-run does not redeploy what is already live.
