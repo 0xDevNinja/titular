@@ -1,0 +1,53 @@
+# Echidna fuzz config for ACP v2 contracts (Issue #71).
+#
+# Targets the property-based suites under contracts/evm/test/echidna/.
+# Fuzz contracts (state machines + property assertions) are owned by
+# solidity-principal and live alongside this config; this file pins the
+# Echidna runtime tuning only.
+#
+# Run from contracts/evm/:
+#   echidna . --contract <ContractName> --config test/echidna/acp.yaml
+#
+# Key invariants this configuration is intended to exercise:
+#   - I2: Job.phase is monotonic; terminal phases {Completed, Cancelled} are absorbing.
+#   - I3: Escrow accounting — sum(funded) - sum(released) - sum(refunded) == on-chain balance.
+#   - I5: ReputationOracle scorerNonce is monotone; consumed nonces never reset.
+#   - I6: Fee-split bps sum to 10_000 on every release.
+
+testMode: assertion
+testLimit: 200000
+seqLen: 100
+shrinkLimit: 5000
+codeSize: 0xffff
+
+# Reasonable depth for state-machine exploration; matches M2 launchpad fuzz tuning.
+maxBlockDelay: 60480           # ~7 days
+maxTimeDelay: 604800           # 7 days
+
+# Coverage-guided fuzzing improves state-machine reach.
+coverage: true
+corpusDir: test/echidna/corpus
+
+# Diagnostics
+format: text
+
+# Solidity / Foundry compatibility
+solcArgs: "--via-ir"
+cryticArgs: ["--foundry-compile-all"]
+
+# Sender allowlist — Echidna will pick from this set as msg.sender.
+# Mirrors the actor model: principal, agent, arbiter, evaluator, attacker.
+sender:
+  - "0x10000"  # principal
+  - "0x20000"  # agent
+  - "0x30000"  # arbiter
+  - "0x40000"  # evaluator
+  - "0x50000"  # attacker / unrelated
+
+# Block-level controls
+balanceContract: 0
+balanceAddr: 0xffffffffffffffffffff
+
+# Filter — exclude OpenZeppelin / forge-std internals from coverage.
+filterFunctions: []
+filterBlacklist: true
