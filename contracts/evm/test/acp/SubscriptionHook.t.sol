@@ -7,7 +7,10 @@ import {SubscriptionHook} from "../../src/acp/SubscriptionHook.sol";
 
 contract MockToken is ERC20 {
     constructor() ERC20("MockSub", "MSUB") {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 contract SubscriptionHookTest is Test {
@@ -21,16 +24,24 @@ contract SubscriptionHookTest is Test {
     uint256 internal constant JOB_ID = 5;
 
     event SubscriptionRenewed(
-        uint256 indexed jobId, address indexed subscriber, address indexed provider,
-        uint256 amount, uint64 nextRenewalAt
+        uint256 indexed jobId,
+        address indexed subscriber,
+        address indexed provider,
+        uint256 amount,
+        uint64 nextRenewalAt
     );
     event SubscriptionCancelled(uint256 indexed jobId);
 
     function _initCtx() internal view returns (bytes memory) {
-        return abi.encode(SubscriptionHook.RenewContext({
-            subscriber: subscriber, provider: provider, token: address(token),
-            periodAmount: PERIOD_AMOUNT, periodDuration: PERIOD_DURATION
-        }));
+        return abi.encode(
+            SubscriptionHook.RenewContext({
+                subscriber: subscriber,
+                provider: provider,
+                token: address(token),
+                periodAmount: PERIOD_AMOUNT,
+                periodDuration: PERIOD_DURATION
+            })
+        );
     }
 
     function setUp() public {

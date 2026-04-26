@@ -7,7 +7,10 @@ import {MilestoneHook} from "../../src/acp/MilestoneHook.sol";
 
 contract MockToken is ERC20 {
     constructor() ERC20("MockMile", "MMILE") {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 contract MilestoneHookTest is Test {
@@ -25,9 +28,9 @@ contract MilestoneHookTest is Test {
     event MilestoneCancelled(uint256 indexed jobId, uint8 remainingStages);
 
     function _initCtx(uint8 stages) internal view returns (bytes memory) {
-        return abi.encode(MilestoneHook.InitContext({
-            agent: agent, token: address(token), totalBudget: BUDGET, stages: stages
-        }));
+        return abi.encode(
+            MilestoneHook.InitContext({agent: agent, token: address(token), totalBudget: BUDGET, stages: stages})
+        );
     }
 
     function setUp() public {
@@ -44,7 +47,7 @@ contract MilestoneHookTest is Test {
 
     function test_onAccept_initialisesState() public {
         hook.onAccept(JOB_ID, _initCtx(4));
-        (address a,,uint256 sa,,uint8 total,uint8 completed, bool init) = hook.milestones(JOB_ID);
+        (address a,, uint256 sa,, uint8 total, uint8 completed, bool init) = hook.milestones(JOB_ID);
         assertEq(a, agent);
         assertEq(total, 4);
         assertEq(completed, 0);
@@ -75,20 +78,25 @@ contract MilestoneHookTest is Test {
 
     function test_onApprove_revert_allStagesComplete() public {
         hook.onAccept(JOB_ID, _initCtx(2));
-        vm.prank(caller); hook.onApprove(JOB_ID, "");
-        vm.prank(caller); hook.onApprove(JOB_ID, "");
+        vm.prank(caller);
+        hook.onApprove(JOB_ID, "");
+        vm.prank(caller);
+        hook.onApprove(JOB_ID, "");
         vm.expectRevert(abi.encodeWithSelector(MilestoneHook.AllStagesComplete.selector, JOB_ID));
-        vm.prank(caller); hook.onApprove(JOB_ID, "");
+        vm.prank(caller);
+        hook.onApprove(JOB_ID, "");
     }
 
     function test_onApprove_revert_notInitialised() public {
         vm.expectRevert(abi.encodeWithSelector(MilestoneHook.NotInitialised.selector, 99));
-        vm.prank(caller); hook.onApprove(99, "");
+        vm.prank(caller);
+        hook.onApprove(99, "");
     }
 
     function test_onCancel_cancelsRemainingStages() public {
         hook.onAccept(JOB_ID, _initCtx(5));
-        vm.prank(caller); hook.onApprove(JOB_ID, ""); // 1 of 5
+        vm.prank(caller); // 1 of 5
+        hook.onApprove(JOB_ID, "");
 
         vm.expectEmit(true, false, false, true);
         emit MilestoneCancelled(JOB_ID, 4);
@@ -107,9 +115,9 @@ contract MilestoneHookTest is Test {
         stages = uint8(bound(stages, 1, 20));
         token.mint(caller, totalBudget);
 
-        bytes memory ctx = abi.encode(MilestoneHook.InitContext({
-            agent: agent, token: address(token), totalBudget: totalBudget, stages: stages
-        }));
+        bytes memory ctx = abi.encode(
+            MilestoneHook.InitContext({agent: agent, token: address(token), totalBudget: totalBudget, stages: stages})
+        );
         hook.onAccept(JOB_ID + uint256(stages), ctx);
         for (uint8 i = 0; i < stages; ++i) {
             vm.prank(caller);

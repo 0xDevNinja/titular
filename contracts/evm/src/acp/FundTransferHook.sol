@@ -29,7 +29,7 @@ contract FundTransferHook is IHook, ReentrancyGuard {
         address agent;
         address token;
         uint256 amount;
-        uint256 pnlBps;         // PnL share to retain for settlement (BPS of amount)
+        uint256 pnlBps; // PnL share to retain for settlement (BPS of amount)
         address settlementAddr; // Where the PnL share goes (0 = skip PnL split)
     }
 

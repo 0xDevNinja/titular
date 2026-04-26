@@ -81,10 +81,8 @@ contract SubscriptionHook is IHook {
         RenewContext memory ctx = abi.decode(context, (RenewContext));
         if (ctx.periodDuration == 0) revert InvalidDuration();
         // slither-disable-next-line timestamp
-        subscriptions[jobId] = SubscriptionState({
-            nextRenewalAt: uint64(block.timestamp) + ctx.periodDuration,
-            active: true
-        });
+        subscriptions[jobId] =
+            SubscriptionState({nextRenewalAt: uint64(block.timestamp) + ctx.periodDuration, active: true});
     }
 
     /// @inheritdoc IHook

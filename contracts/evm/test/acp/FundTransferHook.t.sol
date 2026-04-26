@@ -7,7 +7,10 @@ import {FundTransferHook} from "../../src/acp/FundTransferHook.sol";
 
 contract MockToken is ERC20 {
     constructor() ERC20("Mock", "MCK") {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 contract FundTransferHookTest is Test {
@@ -22,8 +25,12 @@ contract FundTransferHookTest is Test {
     uint256 internal constant JOB_ID = 1;
 
     event FundTransferred(
-        uint256 indexed jobId, address indexed agent, address indexed token,
-        uint256 agentAmount, uint256 pnlAmount, address settlementAddr
+        uint256 indexed jobId,
+        address indexed agent,
+        address indexed token,
+        uint256 agentAmount,
+        uint256 pnlAmount,
+        address settlementAddr
     );
 
     function setUp() public {
@@ -39,9 +46,11 @@ contract FundTransferHookTest is Test {
     }
 
     function test_onApprove_noSplit() public {
-        bytes memory ctx = abi.encode(FundTransferHook.ApproveContext({
-            agent: agent, token: address(token), amount: AMOUNT, pnlBps: 0, settlementAddr: address(0)
-        }));
+        bytes memory ctx = abi.encode(
+            FundTransferHook.ApproveContext({
+                agent: agent, token: address(token), amount: AMOUNT, pnlBps: 0, settlementAddr: address(0)
+            })
+        );
         vm.expectEmit(true, true, true, true);
         emit FundTransferred(JOB_ID, agent, address(token), AMOUNT, 0, address(0));
         vm.prank(caller);
@@ -51,10 +60,11 @@ contract FundTransferHookTest is Test {
 
     function test_onApprove_withPnlSplit() public {
         // 10% PnL split
-        bytes memory ctx = abi.encode(FundTransferHook.ApproveContext({
-            agent: agent, token: address(token), amount: AMOUNT,
-            pnlBps: 1000, settlementAddr: settlement
-        }));
+        bytes memory ctx = abi.encode(
+            FundTransferHook.ApproveContext({
+                agent: agent, token: address(token), amount: AMOUNT, pnlBps: 1000, settlementAddr: settlement
+            })
+        );
         vm.prank(caller);
         hook.onApprove(JOB_ID, ctx);
         assertEq(token.balanceOf(agent), AMOUNT * 90 / 100);
@@ -62,28 +72,33 @@ contract FundTransferHookTest is Test {
     }
 
     function test_onApprove_revert_invalidBps() public {
-        bytes memory ctx = abi.encode(FundTransferHook.ApproveContext({
-            agent: agent, token: address(token), amount: AMOUNT,
-            pnlBps: 10_001, settlementAddr: settlement
-        }));
+        bytes memory ctx = abi.encode(
+            FundTransferHook.ApproveContext({
+                agent: agent, token: address(token), amount: AMOUNT, pnlBps: 10_001, settlementAddr: settlement
+            })
+        );
         vm.expectRevert(FundTransferHook.InvalidBps.selector);
         vm.prank(caller);
         hook.onApprove(JOB_ID, ctx);
     }
 
     function test_onApprove_revert_zeroAgent() public {
-        bytes memory ctx = abi.encode(FundTransferHook.ApproveContext({
-            agent: address(0), token: address(token), amount: AMOUNT, pnlBps: 0, settlementAddr: address(0)
-        }));
+        bytes memory ctx = abi.encode(
+            FundTransferHook.ApproveContext({
+                agent: address(0), token: address(token), amount: AMOUNT, pnlBps: 0, settlementAddr: address(0)
+            })
+        );
         vm.expectRevert(FundTransferHook.ZeroAddress.selector);
         vm.prank(caller);
         hook.onApprove(JOB_ID, ctx);
     }
 
     function test_onApprove_revert_zeroAmount() public {
-        bytes memory ctx = abi.encode(FundTransferHook.ApproveContext({
-            agent: agent, token: address(token), amount: 0, pnlBps: 0, settlementAddr: address(0)
-        }));
+        bytes memory ctx = abi.encode(
+            FundTransferHook.ApproveContext({
+                agent: agent, token: address(token), amount: 0, pnlBps: 0, settlementAddr: address(0)
+            })
+        );
         vm.expectRevert(FundTransferHook.ZeroAmount.selector);
         vm.prank(caller);
         hook.onApprove(JOB_ID, ctx);
@@ -104,10 +119,11 @@ contract FundTransferHookTest is Test {
         pnlBps = bound(pnlBps, 0, 10_000);
         token.mint(caller, amount);
 
-        bytes memory ctx = abi.encode(FundTransferHook.ApproveContext({
-            agent: agent, token: address(token), amount: amount,
-            pnlBps: pnlBps, settlementAddr: settlement
-        }));
+        bytes memory ctx = abi.encode(
+            FundTransferHook.ApproveContext({
+                agent: agent, token: address(token), amount: amount, pnlBps: pnlBps, settlementAddr: settlement
+            })
+        );
         uint256 agentBefore = token.balanceOf(agent);
         uint256 settlementBefore = token.balanceOf(settlement);
         vm.prank(caller);

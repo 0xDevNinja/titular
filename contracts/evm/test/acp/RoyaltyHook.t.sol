@@ -7,7 +7,10 @@ import {RoyaltyHook} from "../../src/acp/RoyaltyHook.sol";
 
 contract MockToken is ERC20 {
     constructor() ERC20("MockRoy", "MROY") {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 contract RoyaltyHookTest is Test {
@@ -21,9 +24,7 @@ contract RoyaltyHookTest is Test {
     uint256 internal constant AMOUNT = 1000e18;
     uint256 internal constant JOB_ID = 10;
 
-    event RoyaltyPaid(
-        uint256 indexed jobId, address indexed token, address indexed recipient, uint256 amount
-    );
+    event RoyaltyPaid(uint256 indexed jobId, address indexed token, address indexed recipient, uint256 amount);
 
     function setUp() public {
         hook = new RoyaltyHook();
@@ -41,9 +42,8 @@ contract RoyaltyHookTest is Test {
         RoyaltyHook.RoyaltyRecipient[] memory recs = new RoyaltyHook.RoyaltyRecipient[](2);
         recs[0] = RoyaltyHook.RoyaltyRecipient({recipient: r1, shareBps: 7000});
         recs[1] = RoyaltyHook.RoyaltyRecipient({recipient: r2, shareBps: 3000});
-        bytes memory ctx = abi.encode(RoyaltyHook.RoyaltyContext({
-            token: address(token), amount: AMOUNT, recipients: recs
-        }));
+        bytes memory ctx =
+            abi.encode(RoyaltyHook.RoyaltyContext({token: address(token), amount: AMOUNT, recipients: recs}));
         vm.prank(caller);
         hook.onApprove(JOB_ID, ctx);
         assertEq(token.balanceOf(r1), 700e18);
@@ -56,9 +56,8 @@ contract RoyaltyHookTest is Test {
         recs[0] = RoyaltyHook.RoyaltyRecipient({recipient: r1, shareBps: 3333});
         recs[1] = RoyaltyHook.RoyaltyRecipient({recipient: r2, shareBps: 3333});
         recs[2] = RoyaltyHook.RoyaltyRecipient({recipient: r3, shareBps: 3334});
-        bytes memory ctx = abi.encode(RoyaltyHook.RoyaltyContext({
-            token: address(token), amount: AMOUNT, recipients: recs
-        }));
+        bytes memory ctx =
+            abi.encode(RoyaltyHook.RoyaltyContext({token: address(token), amount: AMOUNT, recipients: recs}));
         vm.prank(caller);
         hook.onApprove(JOB_ID, ctx);
         uint256 totalOut = token.balanceOf(r1) + token.balanceOf(r2) + token.balanceOf(r3);
@@ -69,9 +68,8 @@ contract RoyaltyHookTest is Test {
         RoyaltyHook.RoyaltyRecipient[] memory recs = new RoyaltyHook.RoyaltyRecipient[](2);
         recs[0] = RoyaltyHook.RoyaltyRecipient({recipient: r1, shareBps: 5000});
         recs[1] = RoyaltyHook.RoyaltyRecipient({recipient: r2, shareBps: 5001}); // 10001
-        bytes memory ctx = abi.encode(RoyaltyHook.RoyaltyContext({
-            token: address(token), amount: AMOUNT, recipients: recs
-        }));
+        bytes memory ctx =
+            abi.encode(RoyaltyHook.RoyaltyContext({token: address(token), amount: AMOUNT, recipients: recs}));
         vm.expectRevert(abi.encodeWithSelector(RoyaltyHook.ShareSumMismatch.selector, 10_001));
         vm.prank(caller);
         hook.onApprove(JOB_ID, ctx);
@@ -79,9 +77,8 @@ contract RoyaltyHookTest is Test {
 
     function test_onApprove_revert_noRecipients() public {
         RoyaltyHook.RoyaltyRecipient[] memory recs = new RoyaltyHook.RoyaltyRecipient[](0);
-        bytes memory ctx = abi.encode(RoyaltyHook.RoyaltyContext({
-            token: address(token), amount: AMOUNT, recipients: recs
-        }));
+        bytes memory ctx =
+            abi.encode(RoyaltyHook.RoyaltyContext({token: address(token), amount: AMOUNT, recipients: recs}));
         vm.expectRevert(RoyaltyHook.NoRecipients.selector);
         vm.prank(caller);
         hook.onApprove(JOB_ID, ctx);
@@ -90,9 +87,7 @@ contract RoyaltyHookTest is Test {
     function test_onApprove_revert_zeroToken() public {
         RoyaltyHook.RoyaltyRecipient[] memory recs = new RoyaltyHook.RoyaltyRecipient[](1);
         recs[0] = RoyaltyHook.RoyaltyRecipient({recipient: r1, shareBps: 10_000});
-        bytes memory ctx = abi.encode(RoyaltyHook.RoyaltyContext({
-            token: address(0), amount: AMOUNT, recipients: recs
-        }));
+        bytes memory ctx = abi.encode(RoyaltyHook.RoyaltyContext({token: address(0), amount: AMOUNT, recipients: recs}));
         vm.expectRevert(RoyaltyHook.ZeroAddress.selector);
         vm.prank(caller);
         hook.onApprove(JOB_ID, ctx);
@@ -111,9 +106,8 @@ contract RoyaltyHookTest is Test {
         RoyaltyHook.RoyaltyRecipient[] memory recs = new RoyaltyHook.RoyaltyRecipient[](2);
         recs[0] = RoyaltyHook.RoyaltyRecipient({recipient: r1, shareBps: 6000});
         recs[1] = RoyaltyHook.RoyaltyRecipient({recipient: r2, shareBps: 4000});
-        bytes memory ctx = abi.encode(RoyaltyHook.RoyaltyContext({
-            token: address(token), amount: amount, recipients: recs
-        }));
+        bytes memory ctx =
+            abi.encode(RoyaltyHook.RoyaltyContext({token: address(token), amount: amount, recipients: recs}));
         vm.prank(caller);
         hook.onApprove(JOB_ID, ctx);
         assertEq(token.balanceOf(r1) + token.balanceOf(r2), amount);

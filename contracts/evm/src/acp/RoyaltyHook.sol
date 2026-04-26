@@ -43,12 +43,7 @@ contract RoyaltyHook is IHook {
     // ─────────────────────────────────────────────────────────────
 
     /// @notice Emitted for each royalty payment.
-    event RoyaltyPaid(
-        uint256 indexed jobId,
-        address indexed token,
-        address indexed recipient,
-        uint256 amount
-    );
+    event RoyaltyPaid(uint256 indexed jobId, address indexed token, address indexed recipient, uint256 amount);
 
     // ─────────────────────────────────────────────────────────────
     // Errors
