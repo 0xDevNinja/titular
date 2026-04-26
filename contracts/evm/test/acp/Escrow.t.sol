@@ -33,7 +33,7 @@ contract EscrowTest is Test {
     event Refunded(address indexed depositor, uint256 indexed jobId, address indexed token, uint256 amount);
 
     function setUp() public {
-        escrow = new Escrow(admin);
+        escrow = new Escrow(admin, address(0x000000000022D473030F116dDEE9F6B43aC78BA3));
         tokenA = new MockERC20();
         tokenB = new MockERC20();
 
