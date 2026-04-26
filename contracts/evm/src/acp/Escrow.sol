@@ -11,7 +11,9 @@ import {IPermit2} from "./IPermit2.sol";
 /// @notice Multi-token escrow with atomic multi-recipient release and Permit2 support.
 /// @dev    Funds are held in this contract; balances tracked per (depositor, jobId, token).
 ///         `release` atomically transfers to N recipients.
-///         `fundWithPermit2` allows gasless ERC-20 approval via Permit2 EIP-712 signature.
+///         `fundWithPermit2` allows gasless ERC-20 approval via Permit2 witness transfer.
+///         The witness binds (depositor, jobId, token, amount) to the signature so it
+///         cannot be replayed across jobs or used to drain a different token.
 ///         RELEASER_ROLE: addresses allowed to call `release` and `refund`.
 ///         CEI: all storage writes before external SafeERC20/Permit2 transfers.
 ///         ReentrancyGuard on `fund`, `fundWithPermit2`, `release`, `refund`.
@@ -42,6 +44,26 @@ contract Escrow is AccessControl, ReentrancyGuard {
     error RecipientZeroAddress(uint256 index);
     error RecipientZeroAmount(uint256 index);
     error SumExceedsBalance(uint256 sum, uint256 balance);
+    error Permit2TokenMismatch(address permitToken, address requestedToken);
+    error Permit2AmountMismatch(uint256 permitAmount, uint256 requestedAmount);
+
+    // ─────────────────────────────────────────────────────────────
+    // Permit2 witness
+    // ─────────────────────────────────────────────────────────────
+
+    /// @dev EIP-712 type string for the escrow witness struct.
+    ///      Must match the struct layout of EscrowWitness exactly.
+    ///      Permit2 appends this to its own type hash as:
+    ///        keccak256("PermitWitnessTransferFrom(...TokenPermissions permitted,...)EscrowWitness(...)")
+    string public constant ESCROW_WITNESS_TYPE =
+        "EscrowWitness(address depositor,uint256 jobId,address token,uint256 amount)";
+
+    /// @dev keccak256 of ESCROW_WITNESS_TYPE, cached for gas efficiency.
+    bytes32 public constant ESCROW_WITNESS_TYPEHASH = keccak256(bytes(ESCROW_WITNESS_TYPE));
+
+    // ─────────────────────────────────────────────────────────────
+    // Constructor
+    // ─────────────────────────────────────────────────────────────
 
     /// @param admin    Address granted DEFAULT_ADMIN_ROLE and RELEASER_ROLE.
     /// @param _permit2 Permit2 contract address (canonical: 0x000000000022D473030F116dDEE9F6B43aC78BA3).
@@ -67,13 +89,20 @@ contract Escrow is AccessControl, ReentrancyGuard {
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
     }
 
-    /// @notice Deposit via Permit2 signed transfer (no prior approve needed).
-    /// @param depositor Address whose balance increases (must be the Permit2 signer).
-    /// @param jobId Opaque job identifier.
-    /// @param token ERC-20 token address.
-    /// @param amount Amount to deposit (must be > 0).
-    /// @param permit Permit2 PermitTransferFrom struct.
-    /// @param signature EIP-712 signature by depositor over permit.
+    /// @notice Deposit via Permit2 witness signed transfer (no prior approve needed).
+    /// @dev    The witness struct `EscrowWitness(depositor, jobId, token, amount)` is bound
+    ///         into the EIP-712 signature so the signature cannot be:
+    ///           - replayed for a different jobId,
+    ///           - used to drain a different token than signed for,
+    ///           - used for a different amount than signed for.
+    ///         The `permit.permitted.token` must equal `token` and
+    ///         `permit.permitted.amount` must equal `amount` to prevent spoofed arguments.
+    /// @param depositor  Address whose balance increases (must be the Permit2 signer).
+    /// @param jobId      Opaque job identifier bound into the witness.
+    /// @param token      ERC-20 token address; must match permit.permitted.token.
+    /// @param amount     Amount to deposit; must match permit.permitted.amount.
+    /// @param permit     Permit2 PermitTransferFrom struct signed by depositor.
+    /// @param signature  EIP-712 signature by depositor over permit + witness.
     function fundWithPermit2(
         address depositor,
         uint256 jobId,
@@ -85,14 +114,31 @@ contract Escrow is AccessControl, ReentrancyGuard {
         if (depositor == address(0)) revert ZeroAddress();
         if (token == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
+
+        // Validate that permit fields match the requested transfer to prevent
+        // cross-token drain (spoofed `token` arg) and amount manipulation.
+        if (permit.permitted.token != token) {
+            revert Permit2TokenMismatch(permit.permitted.token, token);
+        }
+        if (permit.permitted.amount != amount) {
+            revert Permit2AmountMismatch(permit.permitted.amount, amount);
+        }
+
+        // Build witness hash binding (depositor, jobId, token, amount) into the
+        // signature so it cannot be replayed across jobs.
+        bytes32 witness = keccak256(abi.encode(ESCROW_WITNESS_TYPEHASH, depositor, jobId, token, amount));
+
         // Effects before interaction (CEI)
         balances[depositor][jobId][token] += amount;
         emit Funded(depositor, jobId, token, amount);
-        // Interaction via Permit2
-        permit2.permitTransferFrom(
+
+        // Interaction via Permit2 witness transfer
+        permit2.permitWitnessTransferFrom(
             permit,
             IPermit2.SignatureTransferDetails({to: address(this), requestedAmount: amount}),
             depositor,
+            witness,
+            ESCROW_WITNESS_TYPE,
             signature
         );
     }
