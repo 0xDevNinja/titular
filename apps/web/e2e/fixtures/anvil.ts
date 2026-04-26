@@ -72,8 +72,20 @@ let anvilProcess: ChildProcess | null = null;
 export async function startAnvil(): Promise<string> {
   const rpcUrl = `http://127.0.0.1:${ANVIL_PORT}`;
 
+  // Resolve the anvil binary path explicitly so spawn never relies solely on
+  // PATH resolution (which can differ between the shell step and the Node child).
+  const anvilBin = (() => {
+    try {
+      return execSync("which anvil", { stdio: "pipe" }).toString().trim();
+    } catch {
+      return "anvil"; // fall back to PATH lookup
+    }
+  })();
+
+  console.log(`[anvil] binary: ${anvilBin}`);
+
   anvilProcess = spawn(
-    "anvil",
+    anvilBin,
     [
       "--port",
       String(ANVIL_PORT),
@@ -83,18 +95,25 @@ export async function startAnvil(): Promise<string> {
       "31337",
       "--block-time",
       "0",
+      "--silent", // suppress banner noise in CI logs
     ],
-    // "ignore" stdin; pipe stdout/stderr so the OS pipe buffer never blocks the
-    // child process. We drain both streams to /dev/null by attaching no-op
-    // listeners — this avoids the child stalling when the 64 KB pipe fills.
+    // Pipe stdout/stderr so we can surface startup errors. The streams are
+    // forwarded to the parent process so CI logs show any anvil crash reason.
     { stdio: ["ignore", "pipe", "pipe"] }
   );
 
-  anvilProcess.stdout?.resume();
-  anvilProcess.stderr?.resume();
+  // Forward anvil output to the parent process so errors are visible in CI.
+  anvilProcess.stdout?.pipe(process.stdout);
+  anvilProcess.stderr?.pipe(process.stderr);
 
   anvilProcess.on("error", (err) => {
-    console.error("[anvil] failed to start:", err.message);
+    console.error("[anvil] spawn error:", err.message);
+  });
+
+  anvilProcess.on("close", (code) => {
+    if (code !== null && code !== 0) {
+      console.error(`[anvil] process exited early with code ${code}`);
+    }
   });
 
   // Poll until the JSON-RPC socket is accepting connections.
