@@ -32,6 +32,37 @@ contract MockNoDecimals is ERC20 {
     }
 }
 
+/// @dev Token whose `name()` reverts. Exercises the second `staticcall` branch
+///      in {ExistingTokenModule._validateMetadata}: `decimals()` succeeds with
+///      a well-formed uint8, but `name()` blows up. Must surface the canonical
+///      {InvalidExternalToken} error rather than bubbling the foreign revert.
+contract MockNoName is ERC20 {
+    constructor() ERC20("X", "X") {}
+
+    function name() public pure override returns (string memory) {
+        revert("nope");
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
+
+/// @dev Token whose `symbol()` reverts. Exercises the third `staticcall` branch
+///      in {ExistingTokenModule._validateMetadata}: `decimals()` and `name()`
+///      pass, but `symbol()` reverts. Must also surface {InvalidExternalToken}.
+contract MockNoSymbol is ERC20 {
+    constructor() ERC20("X", "X") {}
+
+    function symbol() public pure override returns (string memory) {
+        revert("nope");
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
+
 /// @dev Reentrancy attacker: a fake "ERC-20" whose `transferFrom` re-enters
 ///      {ExistingTokenModule.wrap}. Verifies the {ReentrancyGuard} on the
 ///      top-up path holds.
@@ -247,6 +278,29 @@ contract ExistingTokenModuleTest is Test {
         module.configure(address(bad), curve, SUPPLY, admin);
     }
 
+    function test_configure_reverts_on_reverting_name() public {
+        // `decimals()` returns a clean uint8, but `name()` reverts — covers the
+        // second staticcall branch in _validateMetadata. Pre-deposit so we get
+        // past the funding gate and exercise the metadata gate cleanly.
+        MockNoName bad = new MockNoName();
+        bad.mint(address(module), SUPPLY);
+
+        vm.prank(owner);
+        vm.expectRevert(ExistingTokenModule.InvalidExternalToken.selector);
+        module.configure(address(bad), curve, SUPPLY, admin);
+    }
+
+    function test_configure_reverts_on_reverting_symbol() public {
+        // `decimals()` and `name()` succeed, but `symbol()` reverts — covers the
+        // third (and last) staticcall branch in _validateMetadata.
+        MockNoSymbol bad = new MockNoSymbol();
+        bad.mint(address(module), SUPPLY);
+
+        vm.prank(owner);
+        vm.expectRevert(ExistingTokenModule.InvalidExternalToken.selector);
+        module.configure(address(bad), curve, SUPPLY, admin);
+    }
+
     function test_configure_reverts_on_eoa_external_token() public {
         // Address with no code at all — staticcall to decimals() returns
         // (true, "") which fails our `data.length < 32` guard.
@@ -367,9 +421,10 @@ contract ExistingTokenModuleTest is Test {
 
         // Outer wrap call reverts because the re-entrant inner wrap trips the
         // guard. forge-std bubbles the inner ReentrancyGuardReentrantCall up
-        // through the SafeERC20 call frame.
+        // through the SafeERC20 call frame; assert the exact selector so a
+        // future regression that swallows the guard error would fail loudly.
         vm.prank(depositor);
-        vm.expectRevert();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         module.wrap(address(rt), TOPUP);
     }
 
