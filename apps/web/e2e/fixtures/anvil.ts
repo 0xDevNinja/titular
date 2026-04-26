@@ -93,8 +93,8 @@ export async function startAnvil(): Promise<string> {
       ANVIL_MNEMONIC,
       "--chain-id",
       "31337",
-      "--block-time",
-      "0",
+      // omit --block-time: anvil defaults to instant (on-demand) mining.
+      // foundry >=1.5.1 rejects --block-time 0 as invalid.
       "--silent", // suppress banner noise in CI logs
     ],
     // Pipe stdout/stderr so we can surface startup errors. The streams are
