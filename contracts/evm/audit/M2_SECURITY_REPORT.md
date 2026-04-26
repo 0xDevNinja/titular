@@ -36,7 +36,7 @@ halmos --contract BondingCurveSymbolic
 
 | ID | Severity | Title | Status |
 |----|----------|-------|--------|
-| M2-S-01 | CRITICAL | AgentToken transfer-tax double-skim breaks production graduation | OPEN — fix recommendation below; coordinated with solidity-principal via PR comment |
+| M2-S-01 | CRITICAL | AgentToken transfer-tax double-skim breaks production graduation | RESOLVED — `taxExempt` allowlist landed for `feeRouter`, `bondingCurve`, `graduator`; regression suite inverted to assert success |
 | M2-S-02 | LOW | LaunchpadFactory.launchAgent state writes after external calls (reentrancy-benign) | TRIAGED — false positive, nonReentrant covers it; documented in M2_SLITHER.md |
 | M2-S-03 | LOW | block.timestamp comparisons across LPLock, VeTITU, VestingVault, FeeDistributor | TRIAGED — week / month / year timescales; miner drift irrelevant |
 | M2-S-04 | LOW | calls-loop in FeeDistributor + LaunchpadFactory module dispatch | TRIAGED — both loops bounded by trusted, governance-vetted target sets |
@@ -64,23 +64,33 @@ After the curve → graduator transfer the graduator only holds
 `amountADesired = agentAmount` then reverts with OZ
 `ERC20InsufficientBalance`. **Production graduation is broken.**
 
-### Reproduction
-See `test/integration/GraduateTaxRegression.t.sol`:
+### Reproduction (post-fix)
+See `test/integration/GraduateTaxRegression.t.sol` (regression suite
+inverted now that the fix has landed):
 
-- `test_graduate_reverts_without_tax_skip_for_graduator`: full launch
-  flow, drives the curve to threshold, calls `graduator.graduate`,
-  asserts it reverts with the expected balance error.
-- `test_agentToken_does_not_exempt_curve_or_graduator_today`: confirms
-  the AgentToken's tax-skip set today exempts only the feeRouter,
-  mints, and burns — not the bonding curve or the graduator.
+- `test_graduate_succeeds_with_tax_exempt_graduator`: full launch
+  flow, drives the curve to threshold, calls `graduator.graduate`
+  with no top-up, asserts the router holds the FULL agent + quote
+  reserves.
+- `test_agentToken_exempts_curve_and_graduator_only`: confirms the
+  allowlist exempts `feeRouter`, `bondingCurve`, and `graduator` —
+  but NOT end-user accounts.
+- `test_curve_to_graduator_transfer_is_tax_free`: pins the precise
+  on-chain hop the graduation pull executes.
+- `test_user_to_user_transfer_is_still_taxed`: pins that the
+  allowlist does not leak into end-user economics.
 
-The existing `Graduate.t.sol` integration suite passes only because
-its setup uses `vm.deal` to top the graduator up by exactly 1% via
-`_topUpGraduatorForTax`. That cheat code does not exist on Base
-Sepolia / Base mainnet; the production graduation reverts.
+`Graduate.t.sol` no longer relies on the `_topUpGraduatorForTax`
+cheat helper (removed); a new `test_graduate_succeeds_without_deal_cheat`
+proves end-to-end graduation works with no test-only top-up.
 
-### Recommended fix
-Add an explicit `taxExempt` allowlist to AgentToken:
+### Applied fix
+The `taxExempt` allowlist below has landed on `AgentToken`. The
+factory now passes the shared `graduator` to `AgentToken.initialize`,
+which seeds the allowlist with `feeRouter`, `bondingCurve`, and
+`graduator`. Both legs of the graduation hand-off skip tax; the
+router receives the full agent reserve and `addLiquidity` does not
+underflow.
 
 ```solidity
 mapping(address => bool) public taxExempt;
@@ -118,19 +128,7 @@ the graduator initiates directly — it is a `transferFrom` from
 graduator. With `taxExempt[graduator] = true`, the
 `from == taxExempt` branch fires and the leg moves untaxed.
 
-### Coordination
-Filed as a PR comment on PR #261 (the open Graduator integration PR)
-asking solidity-principal to land the AgentToken update before M2
-deploy. The fix is one storage map + three writes in initialize + one
-extra branch in `_update`.
-
-Until the fix is merged, the M2 deploy script MUST NOT graduate any
-real agent on Base Sepolia. The `Graduate.t.sol` test suite's
-`_topUpGraduatorForTax` cheat is for parallel-feature CI ONLY —
-production graduation will revert.
-
 ### Residual risk
-Once the fix is merged:
 - Tax-exempt allowlist is set ONLY at initialize (immutable behaviour
   per agent). No setter, so a compromised owner cannot grant tax
   exemption to an attacker address.

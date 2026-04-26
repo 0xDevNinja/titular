@@ -10,10 +10,20 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 ///         Fixed 1B supply minted to the bonding curve on initialization. Every peer-to-peer
 ///         transfer is taxed 1% (100 bps) to a shared `feeRouter` that splits between the
 ///         agent creator and the protocol treasury.
-/// @dev    Tax is bypassed on mint, burn, and on any transfer that touches `feeRouter` itself
-///         so the router can sweep collected fees without paying tax on itself (which would
-///         recurse and round down to zero, wasting gas). The implementation contract disables
-///         initializers in its constructor; each clone calls {initialize} exactly once.
+/// @dev    Tax is bypassed on:
+///           - mint (`from == address(0)`) and burn (`to == address(0)`),
+///           - transfers where either counterparty is in the {taxExempt} allowlist —
+///             populated at {initialize} with `feeRouter`, `bondingCurve`, and `graduator`.
+///         The graduator entry is critical: graduation pulls the curve's full agent reserve
+///         into the graduator and immediately forwards it into Uniswap V2 `addLiquidity`. If
+///         the 1% tax fired on either leg, the router's `transferFrom` would underflow the
+///         graduator's balance and graduation would revert. Exemption is set ONCE at
+///         {initialize} — there is no setter and no upgrade path. Curve, graduator, and
+///         feeRouter are all protocol-internal contracts; their exemption does not change
+///         end-user economics, since user-to-user transfers are still taxed in full.
+///
+///         The implementation contract disables initializers in its constructor; each
+///         clone calls {initialize} exactly once.
 contract AgentToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
     /// @notice Fixed per-agent supply: 1,000,000,000 tokens with 18 decimals.
     uint256 public constant TOTAL_SUPPLY = 1_000_000_000e18;
@@ -33,10 +43,18 @@ contract AgentToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
     /// @notice Address holding the full initial supply (typically the paired bonding curve).
     address public bondingCurve;
 
+    /// @notice Allowlist of addresses for which the 1% transfer tax is skipped on either
+    ///         leg of a transfer. Populated only at {initialize}; no runtime setter.
+    mapping(address account => bool exempt) public taxExempt;
+
     /// @dev Emitted once per clone, at the end of {initialize}.
     event AgentTokenInitialized(
         address indexed creator, address indexed feeRouter, address indexed bondingCurve, string name, string symbol
     );
+
+    /// @dev Emitted once per exempt address at {initialize} so off-chain indexers can mirror
+    ///      the allowlist without having to re-derive it from the launchpad wiring.
+    event TaxExemptSet(address indexed addr, bool exempt);
 
     /// @dev Emitted on every taxed transfer. Complements the standard ERC20 `Transfer` events.
     event TaxCollected(address indexed from, address indexed to, uint256 taxAmount);
@@ -55,20 +73,28 @@ contract AgentToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
     /// @dev Mints the full {TOTAL_SUPPLY} to `bondingCurve_`. Can only be invoked once per
     ///      proxy. `creator_` is stored for attribution and set as the Ownable owner so that
     ///      downstream module calls (e.g. metadata updates, if added later) can be gated.
+    ///      Populates {taxExempt} with `feeRouter_`, `bondingCurve_`, and `graduator_` so
+    ///      protocol-internal hops (curve <-> graduator <-> Uniswap router) skip the 1%
+    ///      transfer tax. User-to-user transfers remain taxed.
     /// @param name_         ERC-20 name; must be non-empty.
     /// @param symbol_       ERC-20 symbol; must be non-empty.
     /// @param creator_      Agent creator; becomes the contract owner. Must be non-zero.
     /// @param feeRouter_    Shared fee router that receives the 1% transfer tax. Non-zero.
     /// @param bondingCurve_ Initial supply recipient (the paired bonding curve). Non-zero.
+    /// @param graduator_    Shared graduator that drains both reserves at graduation. Non-zero.
     function initialize(
         string memory name_,
         string memory symbol_,
         address creator_,
         address feeRouter_,
-        address bondingCurve_
+        address bondingCurve_,
+        address graduator_
     ) external initializer {
         if (bytes(name_).length == 0 || bytes(symbol_).length == 0) revert EmptyMetadata();
-        if (creator_ == address(0) || feeRouter_ == address(0) || bondingCurve_ == address(0)) revert ZeroAddress();
+        if (
+            creator_ == address(0) || feeRouter_ == address(0) || bondingCurve_ == address(0)
+                || graduator_ == address(0)
+        ) revert ZeroAddress();
 
         __ERC20_init(name_, symbol_);
         __Ownable_init(creator_);
@@ -77,26 +103,37 @@ contract AgentToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
         feeRouter = feeRouter_;
         bondingCurve = bondingCurve_;
 
+        // Allowlist the three protocol-internal contracts that hop the supply during
+        // bonding-curve trading and graduation. End-user transfers are still taxed.
+        taxExempt[feeRouter_] = true;
+        taxExempt[bondingCurve_] = true;
+        taxExempt[graduator_] = true;
+
         _mint(bondingCurve_, TOTAL_SUPPLY);
 
+        emit TaxExemptSet(feeRouter_, true);
+        emit TaxExemptSet(bondingCurve_, true);
+        emit TaxExemptSet(graduator_, true);
         emit AgentTokenInitialized(creator_, feeRouter_, bondingCurve_, name_, symbol_);
     }
 
     /// @dev Routes 1% of every peer-to-peer transfer to {feeRouter}. Tax is skipped for:
     ///      - mint (`from == address(0)`) so {TOTAL_SUPPLY} lands intact on the bonding curve,
     ///      - burn (`to == address(0)`) to preserve supply semantics,
-    ///      - transfers where either counterparty is `feeRouter`, so the router can sweep
-    ///        its own balance without paying tax on tax (which would round to zero and waste
-    ///        gas on every sweep).
+    ///      - transfers where either counterparty is on the {taxExempt} allowlist (set
+    ///        once at {initialize} for `feeRouter`, `bondingCurve`, and `graduator`).
+    ///        This keeps the protocol-internal graduation hand-off lossless: the curve ->
+    ///        graduator pull and the graduator -> Uniswap router transfer both skip tax,
+    ///        so the router receives the full agent leg and `addLiquidity` does not
+    ///        underflow. User-to-user transfers, including any path that does not touch
+    ///        an exempt address, are still taxed in full.
     ///
     ///      Math: `tax = value * 100 / 10_000` is safe under Solidity 0.8 checked arithmetic
     ///      for any `value <= TOTAL_SUPPLY`. The remainder `value - tax` can never underflow
     ///      because `tax <= value`.
     function _update(address from, address to, uint256 value) internal override {
-        address router = feeRouter;
-
-        // Skip tax on mint, burn, and router-involved transfers.
-        if (from == address(0) || to == address(0) || from == router || to == router) {
+        // Skip tax on mint, burn, and any transfer touching an exempt address.
+        if (from == address(0) || to == address(0) || taxExempt[from] || taxExempt[to]) {
             super._update(from, to, value);
             return;
         }
@@ -108,7 +145,7 @@ contract AgentToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
             return;
         }
 
-        super._update(from, router, tax);
+        super._update(from, feeRouter, tax);
         super._update(from, to, value - tax);
 
         emit TaxCollected(from, to, tax);

@@ -182,13 +182,9 @@ contract TradeIntegrationTest is Test {
     // Buy
     // ---------------------------------------------------------------------
 
-    function test_buy_credits_agent_to_buyer_minus_transfer_tax() public {
+    function test_buy_credits_full_agent_to_buyer() public {
         uint256 quoteIn = 1000e18;
         (uint256 expectedAgentOut, uint256 expectedSwapFee) = curve.quoteBuy(quoteIn);
-        // The agent leg from curve -> alice incurs the AgentToken's 1% transfer
-        // tax. Tax = floor(value * 100 / 10_000) = floor(value/100).
-        uint256 expectedTax = (expectedAgentOut * 100) / 10_000;
-        uint256 expectedNetAgent = expectedAgentOut - expectedTax;
 
         uint256 aliceTituBefore = titu.balanceOf(alice);
 
@@ -201,11 +197,12 @@ contract TradeIntegrationTest is Test {
         assertEq(titu.balanceOf(address(feeRouter)), expectedSwapFee, "swap fee on TITU lands on router");
         assertEq(curve.realQuoteReserve(), quoteIn - expectedSwapFee, "real quote reserve = quoteIn - fee");
 
-        // Agent leg: alice receives `agentOut` net of the 1% transfer tax.
-        assertEq(agent.balanceOf(alice), expectedNetAgent, "buyer net of agent transfer tax");
-        assertEq(agent.balanceOf(address(feeRouter)), expectedTax, "agent transfer tax on FeeRouter");
-        // Curve agent reserve dropped by the FULL `agentOut` (the curve sent
-        // the gross amount; the tax is taken out of the recipient leg).
+        // Agent leg: the BondingCurve is on the AgentToken's {taxExempt} allowlist
+        // (set at initialize), so curve -> buyer hops skip the 1% tax. Alice
+        // receives the full `agentOut`; nothing is skimmed to the FeeRouter on
+        // the buy path. End-user transfers (alice -> someone else) remain taxed.
+        assertEq(agent.balanceOf(alice), expectedAgentOut, "buyer receives full agentOut tax-free");
+        assertEq(agent.balanceOf(address(feeRouter)), 0, "no agent skim on the curve hop");
         assertEq(curve.realAgentReserve(), INITIAL_AGENT - expectedAgentOut);
     }
 
@@ -499,15 +496,23 @@ contract TradeIntegrationTest is Test {
     }
 
     function test_agent_transfer_tax_skipped_on_router_from_leg() public {
-        // Mint via curve buy so the FeeRouter has agent balance.
+        // The BondingCurve is now on the {taxExempt} allowlist, so a buy
+        // skims nothing into the FeeRouter. To set up the FeeRouter with an
+        // agent balance we therefore drive a peer-to-peer transfer that DOES
+        // tax (alice -> bob), which routes 1% to the FeeRouter.
         vm.prank(alice);
         curve.buy(0, 1000e18);
+        uint256 sendAmount = agent.balanceOf(alice) / 2;
+        vm.prank(alice);
+        agent.transfer(bob, sendAmount);
+
         uint256 routerAgent = agent.balanceOf(address(feeRouter));
         require(routerAgent > 0, "router must have agent inventory");
 
         uint256 bobBefore = agent.balanceOf(bob);
 
-        // FeeRouter -> bob: `from == feeRouter` skip-branch must fire.
+        // FeeRouter -> bob: `feeRouter` is on the {taxExempt} allowlist so
+        // this hop skips the 1% tax (router doesn't pay tax on its own sweeps).
         vm.prank(address(feeRouter));
         agent.transfer(bob, routerAgent);
 
