@@ -10,7 +10,10 @@ import {AgentRegistry} from "../../../src/acp/AgentRegistry.sol";
 
 contract MockToken is ERC20 {
     constructor() ERC20("PhaseInv", "PINV") {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 /// @dev Handler that drives a Job through valid transitions.
@@ -27,8 +30,13 @@ contract JobPhaseHandler is Test {
     uint8 public maxPhaseReached;
 
     constructor(
-        Job _job, AgentRegistry _registry, MockToken _token,
-        address _principal, address _agentCtrl, uint256 _agentId, address _arbiter
+        Job _job,
+        AgentRegistry _registry,
+        MockToken _token,
+        address _principal,
+        address _agentCtrl,
+        uint256 _agentId,
+        address _arbiter
     ) {
         job = _job;
         registry = _registry;
@@ -130,9 +138,7 @@ contract PhaseMonotonicityInvariantTest is StdInvariant, Test {
         });
         jobContract.initialize(p);
 
-        handler = new JobPhaseHandler(
-            jobContract, registry, token, principal, agentCtrl, agentId, arbiter
-        );
+        handler = new JobPhaseHandler(jobContract, registry, token, principal, agentCtrl, agentId, arbiter);
         targetContract(address(handler));
     }
 

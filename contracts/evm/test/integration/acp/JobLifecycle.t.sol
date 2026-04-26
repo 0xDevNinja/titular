@@ -12,7 +12,10 @@ import {AgentRegistry} from "../../../src/acp/AgentRegistry.sol";
 ///         (Direct and Evaluated), with and without an evaluator.
 contract MockToken is ERC20 {
     constructor() ERC20("IntTest", "INT") {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 contract JobLifecycleTest is Test {
@@ -50,8 +53,13 @@ contract JobLifecycleTest is Test {
     function test_directJob_fullLifecycle_principalApproves() public {
         vm.prank(principal);
         (uint256 jobId, address clone) = factory.createJob(
-            agentId, address(token), BUDGET, uint64(block.timestamp + DEADLINE),
-            IJob.JobType.Direct, address(0), address(0)
+            agentId,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         Job j = Job(clone);
 
@@ -82,8 +90,7 @@ contract JobLifecycleTest is Test {
     function test_directJob_release_afterGracePeriod() public {
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE),
-            IJob.JobType.Direct, address(0), address(0)
+            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE), IJob.JobType.Direct, address(0), address(0)
         );
         Job j = Job(clone);
 
@@ -109,13 +116,20 @@ contract JobLifecycleTest is Test {
     function test_evaluatedJob_fullLifecycle_evaluatorApproves() public {
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            agentId, address(token), BUDGET, uint64(block.timestamp + DEADLINE),
-            IJob.JobType.Evaluated, evaluator, address(0)
+            agentId,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE),
+            IJob.JobType.Evaluated,
+            evaluator,
+            address(0)
         );
         Job j = Job(clone);
 
-        vm.prank(agentCtrl); j.accept(agentId);
-        vm.prank(agentCtrl); j.submitResult("ipfs://QmEval");
+        vm.prank(agentCtrl);
+        j.accept(agentId);
+        vm.prank(agentCtrl);
+        j.submitResult("ipfs://QmEval");
         assertEq(uint8(j.phase()), uint8(IJob.Phase.Review));
 
         // Evaluator approves
@@ -128,13 +142,20 @@ contract JobLifecycleTest is Test {
     function test_evaluatedJob_rejectAndResubmit() public {
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            agentId, address(token), BUDGET, uint64(block.timestamp + DEADLINE),
-            IJob.JobType.Evaluated, evaluator, address(0)
+            agentId,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE),
+            IJob.JobType.Evaluated,
+            evaluator,
+            address(0)
         );
         Job j = Job(clone);
 
-        vm.prank(agentCtrl); j.accept(agentId);
-        vm.prank(agentCtrl); j.submitResult("ipfs://QmBad");
+        vm.prank(agentCtrl);
+        j.accept(agentId);
+        vm.prank(agentCtrl);
+        j.submitResult("ipfs://QmBad");
 
         // Evaluator rejects → back to Active
         vm.prank(evaluator);
@@ -143,8 +164,10 @@ contract JobLifecycleTest is Test {
         assertEq(bytes(j.resultURI()).length, 0);
 
         // Agent resubmits
-        vm.prank(agentCtrl); j.submitResult("ipfs://QmGood");
-        vm.prank(evaluator); j.approveResult();
+        vm.prank(agentCtrl);
+        j.submitResult("ipfs://QmGood");
+        vm.prank(evaluator);
+        j.approveResult();
         assertEq(uint8(j.phase()), uint8(IJob.Phase.Completed));
     }
 
@@ -154,8 +177,7 @@ contract JobLifecycleTest is Test {
         uint256 before = token.balanceOf(principal);
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE),
-            IJob.JobType.Direct, address(0), address(0)
+            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE), IJob.JobType.Direct, address(0), address(0)
         );
         Job j = Job(clone);
 
@@ -170,16 +192,24 @@ contract JobLifecycleTest is Test {
     function test_dispute_agentFavoured() public {
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            agentId, address(token), BUDGET, uint64(block.timestamp + DEADLINE),
-            IJob.JobType.Direct, address(0), address(0)
+            agentId,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         Job j = Job(clone);
 
-        vm.prank(agentCtrl); j.accept(agentId);
-        vm.prank(principal); j.raiseDispute();
+        vm.prank(agentCtrl);
+        j.accept(agentId);
+        vm.prank(principal);
+        j.raiseDispute();
         assertEq(uint8(j.phase()), uint8(IJob.Phase.Disputed));
 
-        vm.prank(arbiter); j.resolveDispute(true);
+        vm.prank(arbiter);
+        j.resolveDispute(true);
         assertEq(uint8(j.phase()), uint8(IJob.Phase.Completed));
         assertEq(token.balanceOf(agentCtrl), BUDGET);
     }
@@ -187,16 +217,24 @@ contract JobLifecycleTest is Test {
     function test_dispute_principalFavoured_refunds() public {
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            agentId, address(token), BUDGET, uint64(block.timestamp + DEADLINE),
-            IJob.JobType.Direct, address(0), address(0)
+            agentId,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         Job j = Job(clone);
 
-        vm.prank(agentCtrl); j.accept(agentId);
-        vm.prank(agentCtrl); j.raiseDispute();
+        vm.prank(agentCtrl);
+        j.accept(agentId);
+        vm.prank(agentCtrl);
+        j.raiseDispute();
 
         uint256 before = token.balanceOf(principal);
-        vm.prank(arbiter); j.resolveDispute(false);
+        vm.prank(arbiter);
+        j.resolveDispute(false);
         assertEq(token.balanceOf(principal), before + BUDGET);
         assertEq(uint8(j.phase()), uint8(IJob.Phase.Cancelled));
     }
@@ -207,8 +245,7 @@ contract JobLifecycleTest is Test {
         uint256 before = token.balanceOf(principal);
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE),
-            IJob.JobType.Direct, address(0), address(0)
+            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE), IJob.JobType.Direct, address(0), address(0)
         );
         Job j = Job(clone);
 
@@ -222,19 +259,32 @@ contract JobLifecycleTest is Test {
     function test_multipleJobs_isolatedState() public {
         vm.prank(principal);
         (, address c0) = factory.createJob(
-            agentId, address(token), BUDGET / 2, uint64(block.timestamp + DEADLINE),
-            IJob.JobType.Direct, address(0), address(0)
+            agentId,
+            address(token),
+            BUDGET / 2,
+            uint64(block.timestamp + DEADLINE),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         vm.prank(principal);
         (, address c1) = factory.createJob(
-            agentId, address(token), BUDGET / 2, uint64(block.timestamp + DEADLINE),
-            IJob.JobType.Direct, address(0), address(0)
+            agentId,
+            address(token),
+            BUDGET / 2,
+            uint64(block.timestamp + DEADLINE),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
 
         // Complete job 0
-        vm.prank(agentCtrl); Job(c0).accept(agentId);
-        vm.prank(agentCtrl); Job(c0).submitResult("ipfs://QmA");
-        vm.prank(principal); Job(c0).approveResult();
+        vm.prank(agentCtrl);
+        Job(c0).accept(agentId);
+        vm.prank(agentCtrl);
+        Job(c0).submitResult("ipfs://QmA");
+        vm.prank(principal);
+        Job(c0).approveResult();
 
         // Job 1 still Open
         assertEq(uint8(Job(c0).phase()), uint8(IJob.Phase.Completed));

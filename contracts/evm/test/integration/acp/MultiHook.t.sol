@@ -13,7 +13,10 @@ import {AgentRegistry} from "../../../src/acp/AgentRegistry.sol";
 ///         and FundTransferHook for a PnL settlement on the final stage.
 contract MockToken is ERC20 {
     constructor() ERC20("MultiHook", "MH") {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 contract MultiHookTest is Test {
@@ -58,9 +61,9 @@ contract MultiHookTest is Test {
 
     /// @notice MilestoneHook: 3-stage job, each stage releases BUDGET/3.
     function test_milestoneHook_threeStages() public {
-        bytes memory initCtx = abi.encode(MilestoneHook.InitContext({
-            agent: agent, token: address(token), totalBudget: BUDGET, stages: STAGES
-        }));
+        bytes memory initCtx = abi.encode(
+            MilestoneHook.InitContext({agent: agent, token: address(token), totalBudget: BUDGET, stages: STAGES})
+        );
         milestoneHook.onAccept(JOB_ID, initCtx);
 
         uint256 stageAmt = BUDGET / STAGES;
@@ -74,13 +77,15 @@ contract MultiHookTest is Test {
     /// @notice FundTransferHook: final stage with 5% PnL settlement.
     function test_fundTransferHook_withPnlOnFinalStage() public {
         uint256 finalStageAmt = BUDGET / STAGES;
-        bytes memory ctx = abi.encode(FundTransferHook.ApproveContext({
-            agent: agent,
-            token: address(token),
-            amount: finalStageAmt,
-            pnlBps: 500, // 5% PnL
-            settlementAddr: settlement
-        }));
+        bytes memory ctx = abi.encode(
+            FundTransferHook.ApproveContext({
+                agent: agent,
+                token: address(token),
+                amount: finalStageAmt,
+                pnlBps: 500, // 5% PnL
+                settlementAddr: settlement
+            })
+        );
         vm.prank(principal);
         fundHook.onApprove(JOB_ID, ctx);
 
@@ -90,9 +95,9 @@ contract MultiHookTest is Test {
 
     /// @notice Combined: milestone pays first 2 stages normally, fund-transfer handles stage 3 with PnL.
     function test_combined_milestoneAndFundTransfer() public {
-        bytes memory initCtx = abi.encode(MilestoneHook.InitContext({
-            agent: agent, token: address(token), totalBudget: BUDGET, stages: STAGES
-        }));
+        bytes memory initCtx = abi.encode(
+            MilestoneHook.InitContext({agent: agent, token: address(token), totalBudget: BUDGET, stages: STAGES})
+        );
         milestoneHook.onAccept(JOB_ID, initCtx);
 
         uint256 stageAmt = BUDGET / STAGES;
@@ -106,13 +111,15 @@ contract MultiHookTest is Test {
         assertEq(token.balanceOf(agent), stageAmt * 2);
 
         // Stage 3 via FundTransferHook with 10% PnL settlement
-        bytes memory ftCtx = abi.encode(FundTransferHook.ApproveContext({
-            agent: agent,
-            token: address(token),
-            amount: stageAmt + (BUDGET % STAGES), // stage amount + dust
-            pnlBps: 1000, // 10%
-            settlementAddr: settlement
-        }));
+        bytes memory ftCtx = abi.encode(
+            FundTransferHook.ApproveContext({
+                agent: agent,
+                token: address(token),
+                amount: stageAmt + (BUDGET % STAGES), // stage amount + dust
+                pnlBps: 1000, // 10%
+                settlementAddr: settlement
+            })
+        );
         uint256 finalAmt = stageAmt + (BUDGET % STAGES);
         vm.prank(principal);
         fundHook.onApprove(JOB_ID, ftCtx);

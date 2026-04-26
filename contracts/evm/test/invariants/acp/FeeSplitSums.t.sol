@@ -8,7 +8,10 @@ import {FeeSplitter} from "../../../src/acp/FeeSplitter.sol";
 
 contract MockToken is ERC20 {
     constructor() ERC20("FeeInv", "FINV") {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 contract FeeSplitterHandler is Test {
@@ -99,9 +102,7 @@ contract FeeSplitSumsInvariantTest is StdInvariant, Test {
         vm.prank(admin);
         splitter.grantRole(callerRole, callerAddr);
 
-        handler = new FeeSplitterHandler(
-            splitter, token, callerAddr, primaryAddr, treasuryAddr, buybackAddr
-        );
+        handler = new FeeSplitterHandler(splitter, token, callerAddr, primaryAddr, treasuryAddr, buybackAddr);
         targetContract(address(handler));
     }
 

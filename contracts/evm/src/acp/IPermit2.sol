@@ -8,11 +8,13 @@ interface IPermit2 {
         address token;
         uint256 amount;
     }
+
     struct PermitTransferFrom {
         TokenPermissions permitted;
         uint256 nonce;
         uint256 deadline;
     }
+
     struct SignatureTransferDetails {
         address to;
         uint256 requestedAmount;

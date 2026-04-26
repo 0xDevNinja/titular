@@ -27,7 +27,7 @@ contract MilestoneHook is IHook {
     struct MilestoneState {
         address agent;
         address token;
-        uint256 stageAmount;    // budget / stages
+        uint256 stageAmount; // budget / stages
         uint256 lastStageRemainder; // budget % stages (paid on last stage)
         uint8 totalStages;
         uint8 completedStages;
@@ -54,11 +54,7 @@ contract MilestoneHook is IHook {
 
     /// @notice Emitted when a milestone stage is released.
     event MilestoneReleased(
-        uint256 indexed jobId,
-        address indexed agent,
-        uint8 stage,
-        uint8 totalStages,
-        uint256 amount
+        uint256 indexed jobId, address indexed agent, uint8 stage, uint8 totalStages, uint256 amount
     );
 
     /// @notice Emitted when remaining milestones are cancelled.

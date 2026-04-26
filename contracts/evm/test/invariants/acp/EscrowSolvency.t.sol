@@ -8,7 +8,10 @@ import {Escrow} from "../../../src/acp/Escrow.sol";
 
 contract MockToken is ERC20 {
     constructor() ERC20("InvTest", "INV") {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 /// @dev Handler contract that wraps Escrow with bounded random calls for invariant testing.

@@ -124,9 +124,12 @@ contract ReputationTest is Test {
         d2 = bound(d2, type(int64).min, type(int64).max);
         d3 = bound(d3, type(int64).min, type(int64).max);
 
-        vm.prank(scorer); registry.postScore(agentId, d1, 0);
-        vm.prank(scorer); registry.postScore(agentId, d2, 1);
-        vm.prank(scorer); registry.postScore(agentId, d3, 2);
+        vm.prank(scorer);
+        registry.postScore(agentId, d1, 0);
+        vm.prank(scorer);
+        registry.postScore(agentId, d2, 1);
+        vm.prank(scorer);
+        registry.postScore(agentId, d3, 2);
 
         assertEq(registry.getAgent(agentId).reputationScore, d1 + d2 + d3);
     }
