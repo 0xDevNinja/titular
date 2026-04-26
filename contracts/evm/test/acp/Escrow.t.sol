@@ -33,7 +33,7 @@ contract EscrowTest is Test {
     event Refunded(address indexed depositor, uint256 indexed jobId, address indexed token, uint256 amount);
 
     function setUp() public {
-        escrow = new Escrow(admin);
+        escrow = new Escrow(admin, address(0x000000000022D473030F116dDEE9F6B43aC78BA3));
         tokenA = new MockERC20();
         tokenB = new MockERC20();
 
@@ -306,5 +306,90 @@ contract EscrowTest is Test {
         assertEq(tokenA.balanceOf(recipient1), part1);
         assertEq(tokenA.balanceOf(recipient2), part2);
         assertEq(escrow.getBalance(depositor, JOB_ID, address(tokenA)), AMOUNT - part1 - part2);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Permit2 tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+import {IPermit2} from "../../src/acp/IPermit2.sol";
+
+contract MockPermit2 {
+    function permitTransferFrom(
+        IPermit2.PermitTransferFrom calldata permit,
+        IPermit2.SignatureTransferDetails calldata transferDetails,
+        address owner,
+        bytes calldata /*signature*/
+    ) external {
+        ERC20(permit.permitted.token).transferFrom(owner, transferDetails.to, transferDetails.requestedAmount);
+    }
+}
+
+contract EscrowPermit2Test is Test {
+    MockPermit2 internal mockPermit2;
+    Escrow internal escrow;
+    MockERC20 internal token;
+
+    address internal admin = makeAddr("admin2");
+    address internal depositor = makeAddr("depositor2");
+
+    uint256 internal constant AMOUNT = 500e18;
+    uint256 internal constant JOB_ID = 7;
+
+    event Funded(address indexed depositor, uint256 indexed jobId, address indexed token, uint256 amount);
+
+    function setUp() public {
+        mockPermit2 = new MockPermit2();
+        escrow = new Escrow(admin, address(mockPermit2));
+        token = new MockERC20();
+        token.mint(depositor, AMOUNT * 10);
+        vm.prank(depositor);
+        token.approve(address(mockPermit2), type(uint256).max);
+    }
+
+    function test_fundWithPermit2_success() public {
+        IPermit2.PermitTransferFrom memory permit = IPermit2.PermitTransferFrom({
+            permitted: IPermit2.TokenPermissions({token: address(token), amount: AMOUNT}),
+            nonce: 0,
+            deadline: block.timestamp + 1 hours
+        });
+        vm.expectEmit(true, true, true, true);
+        emit Funded(depositor, JOB_ID, address(token), AMOUNT);
+        escrow.fundWithPermit2(depositor, JOB_ID, address(token), AMOUNT, permit, hex"1234");
+        assertEq(escrow.getBalance(depositor, JOB_ID, address(token)), AMOUNT);
+        assertEq(token.balanceOf(address(escrow)), AMOUNT);
+    }
+
+    function test_fundWithPermit2_revert_zeroDepositor() public {
+        IPermit2.PermitTransferFrom memory permit = IPermit2.PermitTransferFrom({
+            permitted: IPermit2.TokenPermissions({token: address(token), amount: AMOUNT}),
+            nonce: 0,
+            deadline: block.timestamp + 1 hours
+        });
+        vm.expectRevert(Escrow.ZeroAddress.selector);
+        escrow.fundWithPermit2(address(0), JOB_ID, address(token), AMOUNT, permit, hex"");
+    }
+
+    function test_fundWithPermit2_revert_zeroAmount() public {
+        IPermit2.PermitTransferFrom memory permit = IPermit2.PermitTransferFrom({
+            permitted: IPermit2.TokenPermissions({token: address(token), amount: 0}),
+            nonce: 0,
+            deadline: block.timestamp + 1 hours
+        });
+        vm.expectRevert(Escrow.ZeroAmount.selector);
+        escrow.fundWithPermit2(depositor, JOB_ID, address(token), 0, permit, hex"");
+    }
+
+    function testFuzz_fundWithPermit2_amounts(uint256 amount) public {
+        amount = bound(amount, 1, type(uint128).max);
+        token.mint(depositor, amount);
+        IPermit2.PermitTransferFrom memory permit = IPermit2.PermitTransferFrom({
+            permitted: IPermit2.TokenPermissions({token: address(token), amount: amount}),
+            nonce: 0,
+            deadline: block.timestamp + 1 hours
+        });
+        escrow.fundWithPermit2(depositor, JOB_ID, address(token), amount, permit, hex"1234");
+        assertGe(escrow.getBalance(depositor, JOB_ID, address(token)), amount);
     }
 }
