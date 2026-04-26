@@ -178,11 +178,22 @@ function deployMockUniswap(rpcUrl: string): {
   uniswapRouter: string;
 } {
   // foundry >=1.5.1 requires --broadcast to actually send the tx (without it
-  // forge create only simulates). After broadcast the receipt line
-  // "Deployed to: 0x..." appears on stdout. Capture stdout+stderr together
-  // via shell 2>&1 so the regex works regardless of which fd foundry uses.
-  function forgeCreate(args: string): string {
-    return execSync(`forge create ${args} --broadcast 2>&1`, {
+  // forge create only simulates). --broadcast must appear before --constructor-args
+  // because --constructor-args is variadic and consumes all subsequent tokens.
+  // Capture stdout+stderr together (2>&1) so "Deployed to:" is always visible.
+  function forgeCreateRun(contract: string, extraArgs = ""): string {
+    const cmd = [
+      "forge create",
+      contract,
+      `--rpc-url ${rpcUrl}`,
+      `--private-key ${DEPLOYER_PRIVATE_KEY}`,
+      "--broadcast",
+      extraArgs,
+      "2>&1",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return execSync(cmd, {
       cwd: CONTRACTS_DIR,
       shell: true,
       stdio: "pipe",
@@ -196,14 +207,13 @@ function deployMockUniswap(rpcUrl: string): {
   }
 
   const factoryAddr = extractAddress(
-    forgeCreate(
-      `test/mocks/MockUniswapV2Factory.sol:MockUniswapV2Factory --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY}`
-    )
+    forgeCreateRun("test/mocks/MockUniswapV2Factory.sol:MockUniswapV2Factory")
   );
 
   const routerAddr = extractAddress(
-    forgeCreate(
-      `test/mocks/MockUniswapV2Router.sol:MockUniswapV2Router --rpc-url ${rpcUrl} --private-key ${DEPLOYER_PRIVATE_KEY} --constructor-args ${factoryAddr}`
+    forgeCreateRun(
+      "test/mocks/MockUniswapV2Router.sol:MockUniswapV2Router",
+      `--constructor-args ${factoryAddr}`
     )
   );
 
