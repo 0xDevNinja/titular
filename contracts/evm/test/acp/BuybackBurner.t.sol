@@ -67,9 +67,7 @@ contract BuybackBurnerTest is Test {
     uint256 internal constant FIXED_OUTPUT = 950e18;
     uint256 internal constant AMOUNT_IN = 1000e18;
 
-    event BuybackAndBurn(
-        address indexed executor, address indexed paymentToken, uint256 amountIn, uint256 tituBurned
-    );
+    event BuybackAndBurn(address indexed executor, address indexed paymentToken, uint256 amountIn, uint256 tituBurned);
 
     function setUp() public {
         payment = new MockPaymentToken();
@@ -87,7 +85,7 @@ contract BuybackBurnerTest is Test {
             address(titu),
             path,
             9000, // 90% min out floor
-            300   // 5 min swap deadline
+            300 // 5 min swap deadline
         );
 
         // Grant executor role
@@ -263,9 +261,8 @@ contract BuybackBurnerTest is Test {
         address[] memory path = new address[](2);
         path[0] = address(payment);
         path[1] = address(titu);
-        BuybackBurner fuzzBurner = new BuybackBurner(
-            admin, address(router), address(payment), address(titu), path, 0, 300
-        );
+        BuybackBurner fuzzBurner =
+            new BuybackBurner(admin, address(router), address(payment), address(titu), path, 0, 300);
         bytes32 executorRole = fuzzBurner.EXECUTOR_ROLE();
         vm.prank(admin);
         fuzzBurner.grantRole(executorRole, executor);

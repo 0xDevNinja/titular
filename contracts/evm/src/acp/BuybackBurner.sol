@@ -80,9 +80,7 @@ contract BuybackBurner is AccessControl, ReentrancyGuard {
     // ─────────────────────────────────────────────────────────────
 
     /// @notice Emitted when a buyback-and-burn is executed.
-    event BuybackAndBurn(
-        address indexed executor, address indexed paymentToken, uint256 amountIn, uint256 tituBurned
-    );
+    event BuybackAndBurn(address indexed executor, address indexed paymentToken, uint256 amountIn, uint256 tituBurned);
 
     /// @notice Emitted when router is updated.
     event RouterUpdated(address indexed oldRouter, address indexed newRouter);
