@@ -31,6 +31,7 @@ contract AgentSupplyInvariant is StdInvariant, Test {
     address internal creator = address(0xC0FFEE);
     address internal feeRouter = address(0xFEE);
     address internal bondingCurve = address(0xB0A2D);
+    address internal graduator = address(0x6BADD);
 
     address[] internal actors;
 
@@ -40,7 +41,7 @@ contract AgentSupplyInvariant is StdInvariant, Test {
     function setUp() public {
         impl = new AgentToken();
         token = AgentToken(Clones.clone(address(impl)));
-        token.initialize(NAME, SYMBOL, creator, feeRouter, bondingCurve);
+        token.initialize(NAME, SYMBOL, creator, feeRouter, bondingCurve, graduator);
 
         actors.push(address(0xA11CE));
         actors.push(address(0xB0B));

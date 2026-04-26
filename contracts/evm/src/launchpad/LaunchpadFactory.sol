@@ -494,7 +494,11 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         //    minted supply lands directly on the curve. AgentToken's
         //    `_disableInitializers` call in the impl constructor blocks the
         //    impl itself from being initialized; only clones see this entry.
-        AgentToken(agentToken).initialize(name_, symbol_, creator, feeRouter, curve);
+        //    Pass the shared graduator so it lands on the AgentToken's
+        //    {taxExempt} allowlist; without this, the 1% transfer tax fires
+        //    on both legs of the graduation hand-off and `addLiquidity`
+        //    underflows the graduator's balance (see issue #265).
+        AgentToken(agentToken).initialize(name_, symbol_, creator, feeRouter, curve, address(graduator));
 
         // 4) Pre-create the V2 pair so the LP ERC-20 address is known at
         //    LPLock construction. Idempotent on subsequent runs because we

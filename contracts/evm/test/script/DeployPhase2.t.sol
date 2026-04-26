@@ -137,7 +137,7 @@ contract DeployPhase2Test is Test {
         // master copy and not a clone.
         AgentToken impl = AgentToken(d.agentTokenImpl);
         vm.expectRevert();
-        impl.initialize("X", "X", address(0xCAFE), d.feeRouter, address(0xBABE));
+        impl.initialize("X", "X", address(0xCAFE), d.feeRouter, address(0xBABE), d.graduator);
     }
 
     // -----------------------------------------------------------------------

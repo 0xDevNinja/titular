@@ -250,35 +250,24 @@ contract GraduateIntegrationTest is Test {
     // ---------------------------------------------------------------------
     // Atomic graduation: pull + addLiquidity + LP-lock target
     //
-    // Note on tax accounting: the AgentToken levies a 1% transfer tax on every
-    // peer-to-peer transfer that does NOT touch the FeeRouter address. The
-    // graduation hand-off involves two such transfers — curve -> graduator
-    // and graduator -> router — so by the time the router's addLiquidity
-    // pulls the agent leg, the graduator's balance is short of the curve's
-    // pre-pull `realAgentReserve` by (curve-pull tax + router-pull tax).
-    //
-    // To keep the integration assertions about the graduator's `addLiquidity`
-    // dispatch crisp, we top the graduator up by the projected pre-pull tax
-    // BEFORE invoking `graduate(...)`. We use `deal` so the integration test
-    // doesn't depend on accumulated tax being routed back to the graduator
-    // through the FeeRouter. The amount is exactly `agentAmount / 100`.
+    // Tax accounting (post-issue #265 fix): the AgentToken's {taxExempt}
+    // allowlist — populated at {initialize} with `feeRouter`, `bondingCurve`,
+    // and `graduator` — keeps the graduation hand-off lossless. The two
+    // protocol-internal hops (curve -> graduator, graduator -> Uniswap
+    // router) BOTH skip the 1% transfer tax because the source side
+    // (`bondingCurve` then `graduator`) is allowlisted. The Uniswap router
+    // therefore receives the curve's full pre-pull `realAgentReserve` and
+    // `addLiquidity` does not underflow. End-user transfers (curve -> buyer
+    // is exempt because the curve is allowlisted; buyer -> buyer is taxed
+    // because neither side is allowlisted) remain on the original economics.
     // ---------------------------------------------------------------------
-
-    function _topUpGraduatorForTax() internal returns (uint256 agentAmount) {
-        agentAmount = curve.realAgentReserve();
-        // Pre-fund the graduator with the 1% tax that will be skimmed off
-        // the curve -> graduator pull. Without this top-up, the subsequent
-        // graduator -> router transferFrom inside addLiquidity reverts on
-        // an underflowed balance.
-        deal(address(agent), address(graduator), agentAmount / 100);
-    }
 
     function test_graduate_pulls_both_reserves_to_router() public {
         _driveToThreshold();
         curve.requestGraduation();
 
         uint256 quoteReserve = curve.realQuoteReserve();
-        uint256 agentReserve = _topUpGraduatorForTax();
+        uint256 agentReserve = curve.realAgentReserve();
         assertGt(quoteReserve, 0);
         assertGt(agentReserve, 0);
 
@@ -295,23 +284,47 @@ contract GraduateIntegrationTest is Test {
         // the router holds the full quote reserve.
         assertEq(titu.balanceOf(address(router)), quoteReserve, "router holds the quote leg");
 
-        // Agent leg: AgentToken's 1% transfer tax fires on BOTH the curve ->
-        // graduator pull AND the graduator -> router addLiquidity transfer.
-        // The router therefore receives 99% of the curve's pre-pull reserve
-        // and the FeeRouter accrues the rest.
-        uint256 expectedRouterAgent = (agentReserve * 9900) / 10_000;
-        assertApproxEqAbs(
-            agent.balanceOf(address(router)),
-            expectedRouterAgent,
-            2,
-            "router holds 99% of the agent leg (1% per skimmed transfer)"
-        );
+        // Agent leg: with the {taxExempt} allowlist populated at AgentToken
+        // initialization, BOTH legs of the graduation hand-off (curve ->
+        // graduator and graduator -> router) skip the 1% tax. The router
+        // receives the full pre-pull `realAgentReserve` and zero is skimmed
+        // to the FeeRouter from the graduation path.
+        assertEq(agent.balanceOf(address(router)), agentReserve, "router holds the full agent leg");
 
         // Graduator must hold no surplus after the cross-tax round-trip.
         assertEq(titu.balanceOf(address(graduator)), 0);
+        assertEq(agent.balanceOf(address(graduator)), 0, "graduator drained on graduation");
 
         // Idempotency flag flips.
         assertTrue(graduator.graduated(address(curve)));
+    }
+
+    /// @dev End-to-end "real-world" graduation that does NOT use any cheat
+    ///      code (no `vm.deal`, no balance pokes). Production graduation on
+    ///      Base Sepolia / mainnet must succeed under exactly these mechanics
+    ///      — drive to the threshold, request graduation, then graduate with
+    ///      no top-up. This is the primary regression for issue #265.
+    function test_graduate_succeeds_without_deal_cheat() public {
+        _driveToThreshold();
+        curve.requestGraduation();
+
+        uint256 quoteReserve = curve.realQuoteReserve();
+        uint256 agentReserve = curve.realAgentReserve();
+        assertGt(quoteReserve, 0);
+        assertGt(agentReserve, 0);
+
+        // Pre-condition: the graduator has zero agent balance — i.e. there is
+        // no off-curve top-up. In the unfixed code path the subsequent
+        // `graduate` would revert on the router's `transferFrom` underflow.
+        assertEq(agent.balanceOf(address(graduator)), 0, "graduator pre-graduation balance must be zero");
+
+        vm.prank(bob);
+        graduator.graduate(address(curve));
+
+        // Both legs land on the router with no skim.
+        assertEq(titu.balanceOf(address(router)), quoteReserve, "router holds the full quote leg");
+        assertEq(agent.balanceOf(address(router)), agentReserve, "router holds the full agent leg");
+        assertTrue(graduator.graduated(address(curve)), "graduation flag flipped");
     }
 
     function test_graduate_calls_addLiquidity_with_lpLock_as_recipient() public {
@@ -319,7 +332,7 @@ contract GraduateIntegrationTest is Test {
         curve.requestGraduation();
 
         uint256 quoteReserve = curve.realQuoteReserve();
-        uint256 agentReserve = _topUpGraduatorForTax();
+        uint256 agentReserve = curve.realAgentReserve();
 
         vm.prank(bob);
         graduator.graduate(address(curve));
@@ -360,7 +373,6 @@ contract GraduateIntegrationTest is Test {
 
         _driveToThreshold();
         curve.requestGraduation();
-        _topUpGraduatorForTax();
         vm.prank(bob);
         graduator.graduate(address(curve));
 
@@ -374,7 +386,7 @@ contract GraduateIntegrationTest is Test {
         curve.requestGraduation();
 
         uint256 quoteReserve = curve.realQuoteReserve();
-        uint256 agentReserve = _topUpGraduatorForTax();
+        uint256 agentReserve = curve.realAgentReserve();
 
         vm.recordLogs();
         vm.prank(bob);
@@ -403,7 +415,6 @@ contract GraduateIntegrationTest is Test {
     function test_graduate_is_idempotent() public {
         _driveToThreshold();
         curve.requestGraduation();
-        _topUpGraduatorForTax();
         vm.prank(bob);
         graduator.graduate(address(curve));
 
@@ -539,30 +550,27 @@ contract GraduateIntegrationTest is Test {
     }
 
     function test_agent_transfer_tax_fee_distributes_70_30() public {
-        // Buy to give alice agent inventory. The buy ALSO deposits a chunk
-        // of agent on the feeRouter as the curve -> alice transfer is taxed.
+        // Buy to give alice agent inventory. The bondingCurve is on the
+        // {taxExempt} allowlist, so curve -> alice delivers the FULL amount
+        // and NOTHING is skimmed to the FeeRouter on the buy hop. The 1%
+        // agent tax is exclusively levied on user-to-user transfers.
         vm.prank(alice);
         curve.buy(0, 2000e18);
-
-        uint256 routerAgentBeforeP2P = agent.balanceOf(address(feeRouter));
+        assertEq(agent.balanceOf(address(feeRouter)), 0, "curve buy is exempt: no agent skim");
 
         // Peer-to-peer transfer that triggers the 1% agent tax.
         uint256 sendAmount = 100e18;
         uint256 expectedTax = (sendAmount * 100) / 10_000;
         vm.prank(alice);
         agent.transfer(bob, sendAmount);
-        assertEq(
-            agent.balanceOf(address(feeRouter)) - routerAgentBeforeP2P,
-            expectedTax,
-            "p2p transfer adds 1% tax to router"
-        );
+        assertEq(agent.balanceOf(address(feeRouter)), expectedTax, "p2p transfer adds 1% tax to router");
 
-        // Snapshot the FULL feeRouter agent balance (buy tax + p2p tax)
-        // and route it through `distribute(...)`. The mock router accepts
-        // arbitrary amounts. To send agent into the FeeRouter's
-        // `distribute` (which pulls via transferFrom from the caller), we
-        // route the balance through bob using the router-leg tax-skip:
-        // FeeRouter -> bob is `from == feeRouter`, so no tax fires.
+        // Snapshot the FULL feeRouter agent balance (just the p2p tax) and
+        // route it through `distribute(...)`. The mock router accepts arbitrary
+        // amounts. To feed the FeeRouter's `distribute` (which pulls via
+        // transferFrom from the caller), route the balance through bob using
+        // the FeeRouter -> bob hop, which is allowlisted (FeeRouter exempt) so
+        // no tax fires.
         uint256 stream = agent.balanceOf(address(feeRouter));
         vm.prank(address(feeRouter));
         agent.transfer(bob, stream);
