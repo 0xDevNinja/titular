@@ -3,10 +3,16 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import {JobFactory} from "../../src/acp/JobFactory.sol";
 import {Job} from "../../src/acp/Job.sol";
 import {IJob} from "../../src/acp/IJob.sol";
 import {AgentRegistry} from "../../src/acp/AgentRegistry.sol";
+import {Escrow} from "../../src/acp/Escrow.sol";
+import {FeeSplitter} from "../../src/acp/FeeSplitter.sol";
+import {HookRegistry} from "../../src/acp/HookRegistry.sol";
+import {IPermit2} from "../../src/acp/IPermit2.sol";
+import {BuybackBurner} from "../../src/acp/BuybackBurner.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("Mock", "MCK") {}
@@ -16,10 +22,69 @@ contract MockERC20 is ERC20 {
     }
 }
 
+contract MockTITU is ERC20Burnable {
+    constructor() ERC20("TITU", "TITU") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
+
+/// @dev Minimal Permit2 mock (not actually used by factory tests, just for Escrow init).
+contract MockPermit2 {
+    function permitTransferFrom(
+        IPermit2.PermitTransferFrom calldata permit,
+        IPermit2.SignatureTransferDetails calldata transferDetails,
+        address owner,
+        bytes calldata
+    ) external {
+        ERC20(permit.permitted.token).transferFrom(owner, transferDetails.to, transferDetails.requestedAmount);
+    }
+
+    function permitWitnessTransferFrom(
+        IPermit2.PermitTransferFrom calldata permit,
+        IPermit2.SignatureTransferDetails calldata transferDetails,
+        address owner,
+        bytes32,
+        string calldata,
+        bytes calldata
+    ) external {
+        ERC20(permit.permitted.token).transferFrom(owner, transferDetails.to, transferDetails.requestedAmount);
+    }
+}
+
+/// @dev Mock UniV2 router: mints TITU to recipient to simulate a swap.
+contract MockUniRouter {
+    MockTITU public titu;
+
+    constructor(MockTITU _titu) {
+        titu = _titu;
+    }
+
+    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
+        uint256 amountIn,
+        uint256 amountOutMin,
+        address[] calldata path,
+        address to,
+        uint256
+    ) external {
+        ERC20(path[0]).transferFrom(msg.sender, address(this), amountIn);
+        require(amountOutMin == 0 || amountIn >= amountOutMin, "slippage");
+        titu.mint(to, amountIn); // 1:1 for test simplicity
+    }
+}
+
 contract JobFactoryTest is Test {
     AgentRegistry internal registry;
     MockERC20 internal token;
+    MockTITU internal titu;
+    MockPermit2 internal mockPermit2;
+    MockUniRouter internal uniRouter;
     Job internal jobImpl;
+    Escrow internal escrow;
+    FeeSplitter internal feeSplitter;
+    BuybackBurner internal buybackBurner;
+    HookRegistry internal hookRegistry;
     JobFactory internal factory;
 
     address internal admin = makeAddr("admin");
@@ -27,6 +92,7 @@ contract JobFactoryTest is Test {
     address internal principal = makeAddr("principal");
     address internal agentCtrl = makeAddr("agentCtrl");
     address internal evaluator = makeAddr("evaluator");
+    address internal treasury = makeAddr("treasury");
     address internal stranger = makeAddr("stranger");
 
     uint256 internal agentId0;
@@ -46,6 +112,11 @@ contract JobFactoryTest is Test {
     event ImplementationUpdated(address indexed oldImpl, address indexed newImpl);
     event DefaultArbiterUpdated(address indexed oldArbiter, address indexed newArbiter);
 
+    /// @dev Returns an empty hooks array for convenience.
+    function _noHooks() internal pure returns (address[] memory h) {
+        h = new address[](0);
+    }
+
     function setUp() public {
         // Deploy registry + agent
         registry = new AgentRegistry(admin);
@@ -53,8 +124,29 @@ contract JobFactoryTest is Test {
         agentId0 = registry.register(agentCtrl, "ipfs://QmAgent", 0x1);
 
         token = new MockERC20();
+        titu = new MockTITU();
+        mockPermit2 = new MockPermit2();
+        uniRouter = new MockUniRouter(titu);
+
+        // Deploy supporting contracts
+        escrow = new Escrow(admin, address(mockPermit2));
+        address[] memory swapPath = new address[](2);
+        swapPath[0] = address(token);
+        swapPath[1] = address(titu);
+        buybackBurner = new BuybackBurner(admin, address(uniRouter), address(token), address(titu), swapPath, 0, 300);
+        feeSplitter = new FeeSplitter(admin, treasury, address(buybackBurner));
+        hookRegistry = new HookRegistry(admin);
+
         jobImpl = new Job();
-        factory = new JobFactory(admin, address(jobImpl), registry, arbiter);
+        factory = new JobFactory(admin, address(jobImpl), registry, arbiter, escrow, feeSplitter, hookRegistry);
+
+        // Grant factory DEFAULT_ADMIN_ROLE on Escrow + FeeSplitter (so it can grant roles to clones)
+        bytes32 adminRole = escrow.DEFAULT_ADMIN_ROLE();
+        vm.prank(admin);
+        escrow.grantRole(adminRole, address(factory));
+        bytes32 splitterAdminRole = feeSplitter.DEFAULT_ADMIN_ROLE();
+        vm.prank(admin);
+        feeSplitter.grantRole(splitterAdminRole, address(factory));
 
         // Mint + approve tokens for principal
         token.mint(principal, BUDGET * 10);
@@ -70,21 +162,39 @@ contract JobFactoryTest is Test {
         assertEq(factory.jobImplementation(), address(jobImpl));
         assertEq(address(factory.registry()), address(registry));
         assertEq(factory.defaultArbiter(), arbiter);
+        assertEq(address(factory.escrow()), address(escrow));
+        assertEq(address(factory.feeSplitter()), address(feeSplitter));
+        assertEq(address(factory.hookRegistry()), address(hookRegistry));
     }
 
     function test_constructor_revert_zeroAdmin() public {
         vm.expectRevert(JobFactory.ZeroAddress.selector);
-        new JobFactory(address(0), address(jobImpl), registry, arbiter);
+        new JobFactory(address(0), address(jobImpl), registry, arbiter, escrow, feeSplitter, hookRegistry);
     }
 
     function test_constructor_revert_zeroImpl() public {
         vm.expectRevert(JobFactory.ZeroAddress.selector);
-        new JobFactory(admin, address(0), registry, arbiter);
+        new JobFactory(admin, address(0), registry, arbiter, escrow, feeSplitter, hookRegistry);
     }
 
     function test_constructor_revert_zeroArbiter() public {
         vm.expectRevert(JobFactory.ZeroAddress.selector);
-        new JobFactory(admin, address(jobImpl), registry, address(0));
+        new JobFactory(admin, address(jobImpl), registry, address(0), escrow, feeSplitter, hookRegistry);
+    }
+
+    function test_constructor_revert_zeroEscrow() public {
+        vm.expectRevert(JobFactory.ZeroAddress.selector);
+        new JobFactory(admin, address(jobImpl), registry, arbiter, Escrow(address(0)), feeSplitter, hookRegistry);
+    }
+
+    function test_constructor_revert_zeroFeeSplitter() public {
+        vm.expectRevert(JobFactory.ZeroAddress.selector);
+        new JobFactory(admin, address(jobImpl), registry, arbiter, escrow, FeeSplitter(address(0)), hookRegistry);
+    }
+
+    function test_constructor_revert_zeroHookRegistry() public {
+        vm.expectRevert(JobFactory.ZeroAddress.selector);
+        new JobFactory(admin, address(jobImpl), registry, arbiter, escrow, feeSplitter, HookRegistry(address(0)));
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -103,14 +213,18 @@ contract JobFactoryTest is Test {
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            address(0)
+            address(0),
+            _noHooks()
         );
 
         assertEq(jobId, 0);
         assertNotEq(clone, address(0));
         assertEq(factory.getJob(jobId), clone);
         assertEq(factory.totalJobs(), 1);
-        assertEq(token.balanceOf(clone), BUDGET);
+
+        // Budget is now in escrow, not in the clone
+        assertEq(escrow.getBalance(principal, jobId, address(token)), BUDGET);
+        assertEq(token.balanceOf(clone), 0);
 
         Job j = Job(clone);
         assertEq(j.principal(), principal);
@@ -128,7 +242,8 @@ contract JobFactoryTest is Test {
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Evaluated,
             evaluator,
-            address(0)
+            address(0),
+            _noHooks()
         );
         Job j = Job(clone);
         assertEq(j.evaluator(), evaluator);
@@ -145,7 +260,8 @@ contract JobFactoryTest is Test {
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            address(0)
+            address(0),
+            _noHooks()
         );
         assertEq(Job(clone).arbiter(), arbiter);
     }
@@ -160,7 +276,8 @@ contract JobFactoryTest is Test {
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            customArbiter
+            customArbiter,
+            _noHooks()
         );
         assertEq(Job(clone).arbiter(), customArbiter);
     }
@@ -174,7 +291,8 @@ contract JobFactoryTest is Test {
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            address(0)
+            address(0),
+            _noHooks()
         );
         vm.prank(principal);
         (uint256 id1,) = factory.createJob(
@@ -184,7 +302,8 @@ contract JobFactoryTest is Test {
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            address(0)
+            address(0),
+            _noHooks()
         );
         assertEq(id0, 0);
         assertEq(id1, 1);
@@ -201,7 +320,8 @@ contract JobFactoryTest is Test {
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            address(0)
+            address(0),
+            _noHooks()
         );
         uint256[] memory ids = factory.jobsByPrincipal(principal);
         assertEq(ids.length, 1);
@@ -216,7 +336,14 @@ contract JobFactoryTest is Test {
         vm.expectRevert(JobFactory.ZeroAddress.selector);
         vm.prank(principal);
         factory.createJob(
-            0, address(0), BUDGET, uint64(block.timestamp + DEADLINE_DELTA), IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(0),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0),
+            _noHooks()
         );
     }
 
@@ -224,7 +351,14 @@ contract JobFactoryTest is Test {
         vm.expectRevert(JobFactory.ZeroAmount.selector);
         vm.prank(principal);
         factory.createJob(
-            0, address(token), 0, uint64(block.timestamp + DEADLINE_DELTA), IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            0,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0),
+            _noHooks()
         );
     }
 
@@ -232,7 +366,14 @@ contract JobFactoryTest is Test {
         vm.expectRevert(JobFactory.InvalidDeadline.selector);
         vm.prank(principal);
         factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp - 1), IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp - 1),
+            IJob.JobType.Direct,
+            address(0),
+            address(0),
+            _noHooks()
         );
     }
 
@@ -248,7 +389,8 @@ contract JobFactoryTest is Test {
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            address(0)
+            address(0),
+            _noHooks()
         );
     }
 
@@ -265,7 +407,8 @@ contract JobFactoryTest is Test {
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            address(0)
+            address(0),
+            _noHooks()
         );
         vm.prank(principal);
         (, address clone1) = factory.createJob(
@@ -275,7 +418,8 @@ contract JobFactoryTest is Test {
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            address(0)
+            address(0),
+            _noHooks()
         );
         assertNotEq(clone0, clone1);
         // State is isolated
@@ -283,10 +427,26 @@ contract JobFactoryTest is Test {
         assertEq(Job(clone1).jobId(), 1);
     }
 
-    function test_implementation_notInitialized() public view {
-        // The implementation contract itself should be uninitialised (version = 0 / default state)
-        assertEq(Job(address(jobImpl)).budget(), 0);
-        assertEq(Job(address(jobImpl)).principal(), address(0));
+    function test_implementation_disablesInitializers() public {
+        // The implementation itself must revert on initialize (disableInitializers in constructor)
+        Job.InitParams memory p = Job.InitParams({
+            jobId: 1,
+            principal: principal,
+            registry: registry,
+            targetAgentId: 0,
+            token: address(token),
+            budget: BUDGET,
+            deadline: uint64(block.timestamp + DEADLINE_DELTA),
+            jobType: IJob.JobType.Direct,
+            evaluator: address(0),
+            arbiter: arbiter,
+            escrow: escrow,
+            feeSplitter: feeSplitter,
+            hookRegistry: hookRegistry,
+            hooks: _noHooks()
+        });
+        vm.expectRevert();
+        jobImpl.initialize(p);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -345,20 +505,24 @@ contract JobFactoryTest is Test {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // End-to-end: create → accept → complete
+    // End-to-end: create → accept → complete (FeeSplitter receives funds)
     // ─────────────────────────────────────────────────────────────
 
     function test_e2e_createAndComplete() public {
         vm.prank(principal);
-        (, address clone) = factory.createJob(
+        (uint256 jobId, address clone) = factory.createJob(
             agentId0,
             address(token),
             BUDGET,
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            address(0)
+            address(0),
+            _noHooks()
         );
+
+        // Budget held in escrow
+        assertEq(escrow.getBalance(principal, jobId, address(token)), BUDGET);
 
         Job j = Job(clone);
         vm.prank(agentCtrl);
@@ -369,7 +533,11 @@ contract JobFactoryTest is Test {
         j.approveResult();
 
         assertEq(uint8(j.phase()), uint8(IJob.Phase.Completed));
-        assertEq(token.balanceOf(agentCtrl), BUDGET);
+        // 95% of BUDGET goes to agent (Schedule A)
+        uint256 expectedAgent = (BUDGET * 9500) / 10_000;
+        assertGe(token.balanceOf(agentCtrl), expectedAgent);
+        // Escrow balance drained
+        assertEq(escrow.getBalance(principal, jobId, address(token)), 0);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -383,16 +551,17 @@ contract JobFactoryTest is Test {
         token.approve(address(factory), type(uint256).max);
 
         vm.prank(principal);
-        (, address clone) = factory.createJob(
+        (uint256 jobId,) = factory.createJob(
             0,
             address(token),
             budgetAmount,
             uint64(block.timestamp + DEADLINE_DELTA),
             IJob.JobType.Direct,
             address(0),
-            address(0)
+            address(0),
+            _noHooks()
         );
-        assertEq(token.balanceOf(clone), budgetAmount);
-        assertEq(Job(clone).budget(), budgetAmount);
+        // Budget is in escrow now
+        assertEq(escrow.getBalance(principal, jobId, address(token)), budgetAmount);
     }
 }

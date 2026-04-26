@@ -76,47 +76,62 @@ contract DeployPhase3 is Script {
         vm.startBroadcast();
         _deployCore(admin, arbiter, permit2, treasury);
         _deployBuybackAndFees(admin, paymentToken, titu, uniRouter, treasury);
+        _deployFeeSplitter(admin, treasury);
+        _deployJobFactory(admin, arbiter);
         _deployHooks(admin);
         vm.stopBroadcast();
 
         _writeDeployments(admin, permit2, arbiter);
     }
 
-    function _deployCore(address admin, address arbiter, address permit2, address) internal {
+    function _deployCore(address admin, address arbiter, address permit2, address treasury) internal {
         agentRegistry = new AgentRegistry(admin);
         console2.log("AgentRegistry:", address(agentRegistry));
 
-        jobImpl = new Job();
-        console2.log("Job (impl):", address(jobImpl));
-
-        jobFactory = new JobFactory(admin, address(jobImpl), agentRegistry, arbiter);
-        console2.log("JobFactory:", address(jobFactory));
-
+        // Deploy Escrow and FeeSplitter first (needed by JobFactory constructor)
         escrow = new Escrow(admin, permit2);
         console2.log("Escrow:", address(escrow));
+
+        // BuybackBurner is deployed in _deployBuybackAndFees; use address(1) as placeholder
+        // and update after that step. FeeSplitter requires buybackBurner address at construction.
+        // Deploy order: Escrow → BuybackBurner → FeeSplitter → HookRegistry → Job impl → JobFactory
+
+        jobImpl = new Job();
+        console2.log("Job (impl):", address(jobImpl));
     }
 
-    function _deployBuybackAndFees(
-        address admin,
-        address paymentToken,
-        address titu,
-        address uniRouter,
-        address treasury
-    ) internal {
+    function _deployFeeSplitter(address admin, address treasury) internal {
+        feeSplitter = new FeeSplitter(admin, treasury, address(buybackBurner));
+        console2.log("FeeSplitter:", address(feeSplitter));
+
+        hookRegistry = new HookRegistry(admin);
+        console2.log("HookRegistry (pre-hooks):", address(hookRegistry));
+    }
+
+    function _deployJobFactory(address admin, address arbiter) internal {
+        jobFactory = new JobFactory(admin, address(jobImpl), agentRegistry, arbiter, escrow, feeSplitter, hookRegistry);
+        console2.log("JobFactory:", address(jobFactory));
+
+        // Grant JobFactory DEFAULT_ADMIN_ROLE on Escrow so it can grant RELEASER_ROLE to clones
+        escrow.grantRole(escrow.DEFAULT_ADMIN_ROLE(), address(jobFactory));
+        // Grant JobFactory DEFAULT_ADMIN_ROLE on FeeSplitter so it can grant CALLER_ROLE to clones
+        feeSplitter.grantRole(feeSplitter.DEFAULT_ADMIN_ROLE(), address(jobFactory));
+        console2.log("Roles wired: JobFactory -> Escrow + FeeSplitter");
+    }
+
+    function _deployBuybackAndFees(address admin, address paymentToken, address titu, address uniRouter, address)
+        internal
+    {
         address[] memory swapPath = new address[](2);
         swapPath[0] = paymentToken;
         swapPath[1] = titu;
-        buybackBurner = new BuybackBurner(admin, uniRouter, paymentToken, titu, swapPath, 9000, 300);
+        // minTituOut = 0 initially (admin should set a sensible floor after deployment)
+        buybackBurner = new BuybackBurner(admin, uniRouter, paymentToken, titu, swapPath, 0, 300);
         console2.log("BuybackBurner:", address(buybackBurner));
-
-        feeSplitter = new FeeSplitter(admin, treasury, address(buybackBurner));
-        console2.log("FeeSplitter:", address(feeSplitter));
     }
 
-    function _deployHooks(address admin) internal {
-        hookRegistry = new HookRegistry(admin);
-        console2.log("HookRegistry:", address(hookRegistry));
-
+    function _deployHooks(address) internal {
+        // HookRegistry was already deployed in _deployFeeSplitter
         fundTransferHook = new FundTransferHook();
         subscriptionHook = new SubscriptionHook();
         milestoneHook = new MilestoneHook();
@@ -127,6 +142,7 @@ contract DeployPhase3 is Script {
         hookRegistry.registerHook(address(milestoneHook));
         hookRegistry.registerHook(address(royaltyHook));
 
+        console2.log("HookRegistry:", address(hookRegistry));
         console2.log("FundTransferHook:", address(fundTransferHook));
         console2.log("SubscriptionHook:", address(subscriptionHook));
         console2.log("MilestoneHook:", address(milestoneHook));
