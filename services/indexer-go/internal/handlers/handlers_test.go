@@ -42,6 +42,13 @@ func (s *memStore) IsLogProcessed(_ context.Context, txHash common.Hash, logInde
 	return s.processed[logKey(txHash, logIndex)], nil
 }
 
+func (s *memStore) MarkLogProcessed(_ context.Context, txHash common.Hash, logIndex uint) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.processed[logKey(txHash, logIndex)] = true
+	return nil
+}
+
 func (s *memStore) UpsertAgent(_ context.Context, rec handlers.AgentRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -63,6 +70,57 @@ func (s *memStore) MarkGraduated(_ context.Context, rec handlers.GraduationRecor
 	defer s.mu.Unlock()
 	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.graduations = append(s.graduations, rec)
+	return nil
+}
+
+// ACP v2 Store methods — no-op stubs so memStore satisfies the full Store interface.
+// ACP-specific tests use acpMemStore (defined in acp_test.go) which overrides these.
+
+func (s *memStore) UpsertACPAgent(_ context.Context, _ handlers.ACPAgentRegisteredRecord) error {
+	return nil
+}
+
+func (s *memStore) InsertACPScore(_ context.Context, _ handlers.ACPScorePostedRecord) error {
+	return nil
+}
+
+func (s *memStore) UpdateACPController(_ context.Context, _ handlers.ACPControllerTransferRecord) error {
+	return nil
+}
+
+func (s *memStore) UpsertACPJob(_ context.Context, _ handlers.ACPJobRecord) error {
+	return nil
+}
+
+func (s *memStore) UpdateACPJobAccepted(_ context.Context, _ handlers.ACPJobAcceptedRecord) error {
+	return nil
+}
+
+func (s *memStore) UpdateACPResultSubmitted(_ context.Context, _ handlers.ACPResultSubmittedRecord) error {
+	return nil
+}
+
+func (s *memStore) UpdateACPJobCompleted(_ context.Context, _ handlers.ACPJobCompletedRecord) error {
+	return nil
+}
+
+func (s *memStore) UpdateACPJobCancelled(_ context.Context, _ handlers.ACPJobCancelledRecord) error {
+	return nil
+}
+
+func (s *memStore) InsertACPJobCreated(_ context.Context, _ handlers.ACPJobCreatedRecord) error {
+	return nil
+}
+
+func (s *memStore) InsertACPEscrowFunded(_ context.Context, _ handlers.ACPEscrowFundedRecord) error {
+	return nil
+}
+
+func (s *memStore) InsertACPEscrowReleased(_ context.Context, _ handlers.ACPEscrowReleasedRecord) error {
+	return nil
+}
+
+func (s *memStore) InsertACPEscrowRefunded(_ context.Context, _ handlers.ACPEscrowRefundedRecord) error {
 	return nil
 }
 
@@ -126,6 +184,10 @@ func (e *errStore) IsLogProcessed(_ context.Context, _ common.Hash, _ uint) (boo
 	return false, fmt.Errorf("store unavailable")
 }
 
+func (e *errStore) MarkLogProcessed(_ context.Context, _ common.Hash, _ uint) error {
+	return fmt.Errorf("store unavailable")
+}
+
 func (e *errStore) UpsertAgent(_ context.Context, _ handlers.AgentRecord) error {
 	return fmt.Errorf("store unavailable")
 }
@@ -135,6 +197,54 @@ func (e *errStore) InsertTrade(_ context.Context, _ handlers.TradeRecord) error 
 }
 
 func (e *errStore) MarkGraduated(_ context.Context, _ handlers.GraduationRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) UpsertACPAgent(_ context.Context, _ handlers.ACPAgentRegisteredRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) InsertACPScore(_ context.Context, _ handlers.ACPScorePostedRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) UpdateACPController(_ context.Context, _ handlers.ACPControllerTransferRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) UpsertACPJob(_ context.Context, _ handlers.ACPJobRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) UpdateACPJobAccepted(_ context.Context, _ handlers.ACPJobAcceptedRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) UpdateACPResultSubmitted(_ context.Context, _ handlers.ACPResultSubmittedRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) UpdateACPJobCompleted(_ context.Context, _ handlers.ACPJobCompletedRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) UpdateACPJobCancelled(_ context.Context, _ handlers.ACPJobCancelledRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) InsertACPJobCreated(_ context.Context, _ handlers.ACPJobCreatedRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) InsertACPEscrowFunded(_ context.Context, _ handlers.ACPEscrowFundedRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) InsertACPEscrowReleased(_ context.Context, _ handlers.ACPEscrowReleasedRecord) error {
+	return fmt.Errorf("store unavailable")
+}
+
+func (e *errStore) InsertACPEscrowRefunded(_ context.Context, _ handlers.ACPEscrowRefundedRecord) error {
 	return fmt.Errorf("store unavailable")
 }
 

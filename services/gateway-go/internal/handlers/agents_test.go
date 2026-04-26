@@ -27,7 +27,8 @@ func testServer(t *testing.T) *httptest.Server {
 	}
 
 	ah := handlers.NewAgentHandlersWithStore(store)
-	srv := httptest.NewServer(router.New(ah))
+	jh := handlers.NewJobHandlersWithStore(store)
+	srv := httptest.NewServer(router.NewWithHandlers(ah, jh))
 	t.Cleanup(srv.Close)
 	return srv
 }

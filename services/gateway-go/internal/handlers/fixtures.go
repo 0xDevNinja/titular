@@ -15,6 +15,7 @@ import (
 type fixtureStore struct {
 	agents []types.Agent
 	trades []types.Trade
+	jobs   []types.Job
 }
 
 var (
@@ -30,7 +31,7 @@ func fixturesDir() string {
 	return filepath.Join(filepath.Dir(file), "fixtures")
 }
 
-// loadFixtures reads agents.json and trades.json from the fixtures directory.
+// loadFixtures reads agents.json, trades.json, and jobs.json from the fixtures directory.
 func loadFixtures(dir string) (*fixtureStore, error) {
 	store := &fixtureStore{}
 
@@ -50,6 +51,15 @@ func loadFixtures(dir string) (*fixtureStore, error) {
 	}
 	if err := json.Unmarshal(tradesData, &store.trades); err != nil {
 		return nil, fmt.Errorf("parse trades fixture: %w", err)
+	}
+
+	jobsPath := filepath.Join(dir, "jobs.json")
+	jobsData, err := os.ReadFile(jobsPath)
+	if err != nil {
+		return nil, fmt.Errorf("read jobs fixture: %w", err)
+	}
+	if err := json.Unmarshal(jobsData, &store.jobs); err != nil {
+		return nil, fmt.Errorf("parse jobs fixture: %w", err)
 	}
 
 	return store, nil
