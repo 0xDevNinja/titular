@@ -50,6 +50,10 @@ func HandleACPAgentRegistered(ctx context.Context, log types.Log, store Store) e
 		return fmt.Errorf("handlers.HandleACPAgentRegistered: upsert: %w", err)
 	}
 
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPAgentRegistered: mark processed: %w", err)
+	}
+
 	return nil
 }
 
@@ -89,6 +93,10 @@ func HandleACPScorePosted(ctx context.Context, log types.Log, store Store) error
 		return fmt.Errorf("handlers.HandleACPScorePosted: insert: %w", err)
 	}
 
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPScorePosted: mark processed: %w", err)
+	}
+
 	return nil
 }
 
@@ -125,6 +133,10 @@ func HandleACPControllerTransferAccepted(ctx context.Context, log types.Log, sto
 
 	if err := store.UpdateACPController(ctx, rec); err != nil {
 		return fmt.Errorf("handlers.HandleACPControllerTransferAccepted: update: %w", err)
+	}
+
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPControllerTransferAccepted: mark processed: %w", err)
 	}
 
 	return nil
@@ -168,6 +180,10 @@ func HandleACPJobInitialised(ctx context.Context, log types.Log, store Store) er
 		return fmt.Errorf("handlers.HandleACPJobInitialised: upsert: %w", err)
 	}
 
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPJobInitialised: mark processed: %w", err)
+	}
+
 	return nil
 }
 
@@ -203,6 +219,10 @@ func HandleACPAgentAccepted(ctx context.Context, log types.Log, store Store) err
 
 	if err := store.UpdateACPJobAccepted(ctx, rec); err != nil {
 		return fmt.Errorf("handlers.HandleACPAgentAccepted: update: %w", err)
+	}
+
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPAgentAccepted: mark processed: %w", err)
 	}
 
 	return nil
@@ -242,6 +262,10 @@ func HandleACPResultSubmitted(ctx context.Context, log types.Log, store Store) e
 		return fmt.Errorf("handlers.HandleACPResultSubmitted: update: %w", err)
 	}
 
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPResultSubmitted: mark processed: %w", err)
+	}
+
 	return nil
 }
 
@@ -279,6 +303,10 @@ func HandleACPJobCompleted(ctx context.Context, log types.Log, store Store) erro
 		return fmt.Errorf("handlers.HandleACPJobCompleted: update: %w", err)
 	}
 
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPJobCompleted: mark processed: %w", err)
+	}
+
 	return nil
 }
 
@@ -314,6 +342,10 @@ func HandleACPJobCancelled(ctx context.Context, log types.Log, store Store) erro
 
 	if err := store.UpdateACPJobCancelled(ctx, rec); err != nil {
 		return fmt.Errorf("handlers.HandleACPJobCancelled: update: %w", err)
+	}
+
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPJobCancelled: mark processed: %w", err)
 	}
 
 	return nil
@@ -356,6 +388,10 @@ func HandleACPJobCreated(ctx context.Context, log types.Log, store Store) error 
 		return fmt.Errorf("handlers.HandleACPJobCreated: insert: %w", err)
 	}
 
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPJobCreated: mark processed: %w", err)
+	}
+
 	return nil
 }
 
@@ -392,6 +428,10 @@ func HandleACPEscrowFunded(ctx context.Context, log types.Log, store Store) erro
 
 	if err := store.InsertACPEscrowFunded(ctx, rec); err != nil {
 		return fmt.Errorf("handlers.HandleACPEscrowFunded: insert: %w", err)
+	}
+
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPEscrowFunded: mark processed: %w", err)
 	}
 
 	return nil
@@ -433,6 +473,10 @@ func HandleACPEscrowReleased(ctx context.Context, log types.Log, store Store) er
 		return fmt.Errorf("handlers.HandleACPEscrowReleased: insert: %w", err)
 	}
 
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPEscrowReleased: mark processed: %w", err)
+	}
+
 	return nil
 }
 
@@ -469,6 +513,10 @@ func HandleACPEscrowRefunded(ctx context.Context, log types.Log, store Store) er
 
 	if err := store.InsertACPEscrowRefunded(ctx, rec); err != nil {
 		return fmt.Errorf("handlers.HandleACPEscrowRefunded: insert: %w", err)
+	}
+
+	if err := store.MarkLogProcessed(ctx, log.TxHash, log.Index); err != nil {
+		return fmt.Errorf("handlers.HandleACPEscrowRefunded: mark processed: %w", err)
 	}
 
 	return nil

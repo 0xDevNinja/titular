@@ -41,7 +41,6 @@ func newACPMemStore() *acpMemStore {
 func (s *acpMemStore) UpsertACPAgent(_ context.Context, rec handlers.ACPAgentRegisteredRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpAgents = append(s.acpAgents, rec)
 	return nil
 }
@@ -49,7 +48,6 @@ func (s *acpMemStore) UpsertACPAgent(_ context.Context, rec handlers.ACPAgentReg
 func (s *acpMemStore) InsertACPScore(_ context.Context, rec handlers.ACPScorePostedRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpScores = append(s.acpScores, rec)
 	return nil
 }
@@ -57,7 +55,6 @@ func (s *acpMemStore) InsertACPScore(_ context.Context, rec handlers.ACPScorePos
 func (s *acpMemStore) UpdateACPController(_ context.Context, rec handlers.ACPControllerTransferRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpTransfers = append(s.acpTransfers, rec)
 	return nil
 }
@@ -65,7 +62,6 @@ func (s *acpMemStore) UpdateACPController(_ context.Context, rec handlers.ACPCon
 func (s *acpMemStore) UpsertACPJob(_ context.Context, rec handlers.ACPJobRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpJobs = append(s.acpJobs, rec)
 	return nil
 }
@@ -73,7 +69,6 @@ func (s *acpMemStore) UpsertACPJob(_ context.Context, rec handlers.ACPJobRecord)
 func (s *acpMemStore) UpdateACPJobAccepted(_ context.Context, rec handlers.ACPJobAcceptedRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpAccepted = append(s.acpAccepted, rec)
 	return nil
 }
@@ -81,7 +76,6 @@ func (s *acpMemStore) UpdateACPJobAccepted(_ context.Context, rec handlers.ACPJo
 func (s *acpMemStore) UpdateACPResultSubmitted(_ context.Context, rec handlers.ACPResultSubmittedRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpResults = append(s.acpResults, rec)
 	return nil
 }
@@ -89,7 +83,6 @@ func (s *acpMemStore) UpdateACPResultSubmitted(_ context.Context, rec handlers.A
 func (s *acpMemStore) UpdateACPJobCompleted(_ context.Context, rec handlers.ACPJobCompletedRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpCompleted = append(s.acpCompleted, rec)
 	return nil
 }
@@ -97,7 +90,6 @@ func (s *acpMemStore) UpdateACPJobCompleted(_ context.Context, rec handlers.ACPJ
 func (s *acpMemStore) UpdateACPJobCancelled(_ context.Context, rec handlers.ACPJobCancelledRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpCancelled = append(s.acpCancelled, rec)
 	return nil
 }
@@ -105,7 +97,6 @@ func (s *acpMemStore) UpdateACPJobCancelled(_ context.Context, rec handlers.ACPJ
 func (s *acpMemStore) InsertACPJobCreated(_ context.Context, rec handlers.ACPJobCreatedRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpJobCreated = append(s.acpJobCreated, rec)
 	return nil
 }
@@ -113,7 +104,6 @@ func (s *acpMemStore) InsertACPJobCreated(_ context.Context, rec handlers.ACPJob
 func (s *acpMemStore) InsertACPEscrowFunded(_ context.Context, rec handlers.ACPEscrowFundedRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpFunded = append(s.acpFunded, rec)
 	return nil
 }
@@ -121,7 +111,6 @@ func (s *acpMemStore) InsertACPEscrowFunded(_ context.Context, rec handlers.ACPE
 func (s *acpMemStore) InsertACPEscrowReleased(_ context.Context, rec handlers.ACPEscrowReleasedRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpReleased = append(s.acpReleased, rec)
 	return nil
 }
@@ -129,7 +118,6 @@ func (s *acpMemStore) InsertACPEscrowReleased(_ context.Context, rec handlers.AC
 func (s *acpMemStore) InsertACPEscrowRefunded(_ context.Context, rec handlers.ACPEscrowRefundedRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.processed[logKey(rec.TxHash, rec.LogIndex)] = true
 	s.acpRefunded = append(s.acpRefunded, rec)
 	return nil
 }
@@ -887,6 +875,75 @@ func TestHandleACPEscrowRefunded(t *testing.T) {
 	}
 	if len(store.acpRefunded) != 1 {
 		t.Errorf("duplicate: expected 1 refunded record, got %d", len(store.acpRefunded))
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// TestHandleACPScorePosted_NoDeltaAccumulationOnRetry
+//
+// Regression test for issue #74: InsertACPScore is a delta-style write, so
+// replaying the same log must not double-count the score.
+//
+// Before the fix, handlers called IsLogProcessed but never MarkLogProcessed.
+// The acpMemStore marked the log processed inside InsertACPScore itself, which
+// happened to work in-memory, but a real store would not update the processed-
+// log table inside the score insert — leaving the flag unset and allowing the
+// same delta to be inserted twice on retry.
+//
+// The fix: handlers call MarkLogProcessed explicitly after every successful
+// persist, independent of the write method.  Here we verify the handler
+// correctly marks the log and that a second call with the same (txHash,
+// logIndex) produces no additional persist.
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestHandleACPScorePosted_NoDeltaAccumulationOnRetry(t *testing.T) {
+	parsed := mustGetACPABI(t, contractabi.AgentRegistryMetaData)
+	eventID := parsed.Events["ScorePosted"].ID
+
+	agentID := big.NewInt(1)
+	scorer := common.HexToAddress("0xAAAA000000000000000000000000000000000099")
+	delta := big.NewInt(50)
+	newTotal := big.NewInt(150)
+	nonce := big.NewInt(0)
+
+	data := encodeData(t, parsed, "ScorePosted", delta, newTotal, nonce)
+
+	log := types.Log{
+		Address:     common.HexToAddress("0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"),
+		BlockNumber: 5500,
+		TxHash:      fixedTxHash(0x99),
+		Index:       0,
+		Topics: []common.Hash{
+			eventID,
+			uint256Topic(agentID),
+			addrTopic(scorer),
+		},
+		Data: data,
+	}
+
+	store := newACPMemStore()
+	ctx := context.Background()
+
+	// First call — must persist exactly one score record.
+	if err := handlers.HandleACPScorePosted(ctx, log, store); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if got := len(store.acpScores); got != 1 {
+		t.Fatalf("after first call: expected 1 score record, got %d", got)
+	}
+
+	// Second call with identical (txHash, logIndex) — simulates a replay/retry.
+	// The handler must detect the log as already processed and skip InsertACPScore.
+	if err := handlers.HandleACPScorePosted(ctx, log, store); err != nil {
+		t.Fatalf("retry call: %v", err)
+	}
+	if got := len(store.acpScores); got != 1 {
+		t.Errorf("after retry: score delta was double-counted — expected 1 record, got %d", got)
+	}
+
+	// Confirm the stored delta value has not been doubled.
+	if store.acpScores[0].Delta.Cmp(delta) != 0 {
+		t.Errorf("Delta mismatch: got %s, want %s", store.acpScores[0].Delta, delta)
 	}
 }
 
