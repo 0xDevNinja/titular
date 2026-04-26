@@ -16,12 +16,16 @@ contract AgentRegistryTest is Test {
     string internal constant URI = "ipfs://QmTest";
     uint256 internal constant CAPS = 0x1;
 
-    event AgentRegistered(uint256 indexed agentId, address indexed controller, string metadataURI, uint256 capabilities);
+    event AgentRegistered(
+        uint256 indexed agentId, address indexed controller, string metadataURI, uint256 capabilities
+    );
     event MetadataUpdated(uint256 indexed agentId, string metadataURI);
     event CapabilitiesUpdated(uint256 indexed agentId, uint256 capabilities);
     event ActiveStatusChanged(uint256 indexed agentId, bool active);
     event ControllerTransferProposed(uint256 indexed agentId, address indexed proposed);
-    event ControllerTransferAccepted(uint256 indexed agentId, address indexed oldController, address indexed newController);
+    event ControllerTransferAccepted(
+        uint256 indexed agentId, address indexed oldController, address indexed newController
+    );
     event ControllerTransferCancelled(uint256 indexed agentId);
     event ScorePosted(uint256 indexed agentId, address indexed scorer, int256 delta, int256 newTotal, uint256 nonce);
 
