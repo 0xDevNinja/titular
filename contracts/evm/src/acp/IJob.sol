@@ -10,18 +10,18 @@ interface IJob {
 
     /// @notice Ordered job lifecycle phases.
     enum Phase {
-        Open,       // 0 — awaiting agent acceptance
-        Active,     // 1 — agent accepted; work in progress
-        Review,     // 2 — result submitted; in evaluator / principal review
-        Completed,  // 3 — payment released
-        Cancelled,  // 4 — cancelled before completion (by principal before acceptance, or by dispute resolution)
-        Disputed    // 5 — dispute raised; awaiting arbitration
+        Open, // 0 — awaiting agent acceptance
+        Active, // 1 — agent accepted; work in progress
+        Review, // 2 — result submitted; in evaluator / principal review
+        Completed, // 3 — payment released
+        Cancelled, // 4 — cancelled before completion (by principal before acceptance, or by dispute resolution)
+        Disputed // 5 — dispute raised; awaiting arbitration
     }
 
     /// @notice Job type: whether an external evaluator is required before release.
     enum JobType {
-        Direct,     // No evaluator — principal releases on result submission after grace period
-        Evaluated   // Evaluator role is required to approve / reject before release
+        Direct, // No evaluator — principal releases on result submission after grace period
+        Evaluated // Evaluator role is required to approve / reject before release
     }
 
     // ─────────────────────────────────────────────────────────────

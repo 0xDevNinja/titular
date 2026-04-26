@@ -97,8 +97,13 @@ contract JobFactoryTest is Test {
 
         vm.prank(principal);
         (uint256 jobId, address clone) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
 
         assertEq(jobId, 0);
@@ -117,8 +122,13 @@ contract JobFactoryTest is Test {
     function test_createJob_evaluated() public {
         vm.prank(principal);
         (uint256 jobId, address clone) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Evaluated, evaluator, address(0)
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Evaluated,
+            evaluator,
+            address(0)
         );
         Job j = Job(clone);
         assertEq(j.evaluator(), evaluator);
@@ -129,8 +139,13 @@ contract JobFactoryTest is Test {
     function test_createJob_usesDefaultArbiter() public {
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         assertEq(Job(clone).arbiter(), arbiter);
     }
@@ -139,8 +154,13 @@ contract JobFactoryTest is Test {
         address customArbiter = makeAddr("customArbiter");
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), customArbiter
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            customArbiter
         );
         assertEq(Job(clone).arbiter(), customArbiter);
     }
@@ -148,13 +168,23 @@ contract JobFactoryTest is Test {
     function test_createJob_multipleJobs_uniqueIds() public {
         vm.prank(principal);
         (uint256 id0,) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         vm.prank(principal);
         (uint256 id1,) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         assertEq(id0, 0);
         assertEq(id1, 1);
@@ -165,8 +195,13 @@ contract JobFactoryTest is Test {
     function test_createJob_tracked_byPrincipal() public {
         vm.prank(principal);
         factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         uint256[] memory ids = factory.jobsByPrincipal(principal);
         assertEq(ids.length, 1);
@@ -181,8 +216,7 @@ contract JobFactoryTest is Test {
         vm.expectRevert(JobFactory.ZeroAddress.selector);
         vm.prank(principal);
         factory.createJob(
-            0, address(0), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0, address(0), BUDGET, uint64(block.timestamp + DEADLINE_DELTA), IJob.JobType.Direct, address(0), address(0)
         );
     }
 
@@ -190,8 +224,7 @@ contract JobFactoryTest is Test {
         vm.expectRevert(JobFactory.ZeroAmount.selector);
         vm.prank(principal);
         factory.createJob(
-            0, address(token), 0, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0, address(token), 0, uint64(block.timestamp + DEADLINE_DELTA), IJob.JobType.Direct, address(0), address(0)
         );
     }
 
@@ -199,8 +232,7 @@ contract JobFactoryTest is Test {
         vm.expectRevert(JobFactory.InvalidDeadline.selector);
         vm.prank(principal);
         factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp - 1),
-            IJob.JobType.Direct, address(0), address(0)
+            0, address(token), BUDGET, uint64(block.timestamp - 1), IJob.JobType.Direct, address(0), address(0)
         );
     }
 
@@ -210,8 +242,13 @@ contract JobFactoryTest is Test {
         vm.expectRevert();
         vm.prank(principal);
         factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
     }
 
@@ -222,13 +259,23 @@ contract JobFactoryTest is Test {
     function test_cloneIsolation_differentAddresses() public {
         vm.prank(principal);
         (, address clone0) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         vm.prank(principal);
         (, address clone1) = factory.createJob(
-            0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         assertNotEq(clone0, clone1);
         // State is isolated
@@ -304,8 +351,13 @@ contract JobFactoryTest is Test {
     function test_e2e_createAndComplete() public {
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            agentId0, address(token), BUDGET, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            agentId0,
+            address(token),
+            BUDGET,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
 
         Job j = Job(clone);
@@ -332,8 +384,13 @@ contract JobFactoryTest is Test {
 
         vm.prank(principal);
         (, address clone) = factory.createJob(
-            0, address(token), budgetAmount, uint64(block.timestamp + DEADLINE_DELTA),
-            IJob.JobType.Direct, address(0), address(0)
+            0,
+            address(token),
+            budgetAmount,
+            uint64(block.timestamp + DEADLINE_DELTA),
+            IJob.JobType.Direct,
+            address(0),
+            address(0)
         );
         assertEq(token.balanceOf(clone), budgetAmount);
         assertEq(Job(clone).budget(), budgetAmount);
