@@ -57,9 +57,7 @@ contract Escrow is AccessControl, ReentrancyGuard {
     event Funded(address indexed depositor, uint256 indexed jobId, address indexed token, uint256 amount);
 
     /// @notice Emitted for each recipient in an atomic release.
-    event Released(
-        address indexed depositor, uint256 indexed jobId, address indexed token, address to, uint256 amount
-    );
+    event Released(address indexed depositor, uint256 indexed jobId, address indexed token, address to, uint256 amount);
 
     /// @notice Emitted when the full balance is refunded to the depositor.
     event Refunded(address indexed depositor, uint256 indexed jobId, address indexed token, uint256 amount);
@@ -159,11 +157,7 @@ contract Escrow is AccessControl, ReentrancyGuard {
     /// @param  depositor  Owner of the escrowed balance.
     /// @param  jobId      Job identifier.
     /// @param  token      ERC-20 token address.
-    function refund(address depositor, uint256 jobId, address token)
-        external
-        nonReentrant
-        onlyRole(RELEASER_ROLE)
-    {
+    function refund(address depositor, uint256 jobId, address token) external nonReentrant onlyRole(RELEASER_ROLE) {
         uint256 bal = balances[depositor][jobId][token];
         if (bal == 0) revert InsufficientBalance(0, 1);
 

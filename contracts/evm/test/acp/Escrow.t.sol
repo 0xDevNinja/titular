@@ -29,9 +29,7 @@ contract EscrowTest is Test {
     uint256 internal constant AMOUNT = 1000e18;
 
     event Funded(address indexed depositor, uint256 indexed jobId, address indexed token, uint256 amount);
-    event Released(
-        address indexed depositor, uint256 indexed jobId, address indexed token, address to, uint256 amount
-    );
+    event Released(address indexed depositor, uint256 indexed jobId, address indexed token, address to, uint256 amount);
     event Refunded(address indexed depositor, uint256 indexed jobId, address indexed token, uint256 amount);
 
     function setUp() public {

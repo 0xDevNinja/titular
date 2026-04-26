@@ -65,7 +65,9 @@ contract AgentRegistry is AccessControl, Pausable {
     // ─────────────────────────────────────────────────────────────
 
     /// @notice Emitted when a new agent identity is registered.
-    event AgentRegistered(uint256 indexed agentId, address indexed controller, string metadataURI, uint256 capabilities);
+    event AgentRegistered(
+        uint256 indexed agentId, address indexed controller, string metadataURI, uint256 capabilities
+    );
 
     /// @notice Emitted when an agent's metadata URI is updated.
     event MetadataUpdated(uint256 indexed agentId, string metadataURI);
@@ -80,7 +82,9 @@ contract AgentRegistry is AccessControl, Pausable {
     event ControllerTransferProposed(uint256 indexed agentId, address indexed proposed);
 
     /// @notice Emitted when a controller transfer is accepted by the proposed address.
-    event ControllerTransferAccepted(uint256 indexed agentId, address indexed oldController, address indexed newController);
+    event ControllerTransferAccepted(
+        uint256 indexed agentId, address indexed oldController, address indexed newController
+    );
 
     /// @notice Emitted when a controller transfer proposal is cancelled.
     event ControllerTransferCancelled(uint256 indexed agentId);
@@ -224,11 +228,7 @@ contract AgentRegistry is AccessControl, Pausable {
     /// @param agentId ID of the agent receiving the score.
     /// @param delta   Signed delta to add to the cumulative score (may be negative).
     /// @param nonce   Must equal `scorerNonce[agentId]`; incremented after acceptance.
-    function postScore(uint256 agentId, int256 delta, uint256 nonce)
-        external
-        whenNotPaused
-        onlyRole(SCORER_ROLE)
-    {
+    function postScore(uint256 agentId, int256 delta, uint256 nonce) external whenNotPaused onlyRole(SCORER_ROLE) {
         AgentInfo storage info = _agents[agentId];
         // slither-disable-next-line incorrect-equality,timestamp
         if (info.registeredAt == 0) revert AgentNotFound(agentId);
