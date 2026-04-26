@@ -19,6 +19,42 @@ import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+/**
+ * Poll http://127.0.0.1:<port> with eth_blockNumber until the JSON-RPC
+ * socket is accepting connections. Throws if the node is not ready within
+ * the allotted attempts.
+ *
+ * @param rpcUrl  - full URL, e.g. "http://127.0.0.1:8545"
+ * @param retries - number of attempts (default 60)
+ * @param delayMs - milliseconds between attempts (default 50)
+ */
+async function waitForRpc(rpcUrl: string, retries = 60, delayMs = 50): Promise<void> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const res = await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "eth_blockNumber",
+          params: [],
+          id: 1,
+        }),
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { result?: string };
+        if (body.result !== undefined) return;
+      }
+    } catch {
+      // connection refused — anvil not up yet
+    }
+    await sleep(delayMs);
+  }
+  throw new Error(
+    `[anvil] RPC at ${rpcUrl} did not respond after ${retries * delayMs} ms. Check that anvil is installed and the port is available.`
+  );
+}
+
 export const ANVIL_MNEMONIC = "test test test test test test test test test test test junk";
 export const DEPLOYER_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -55,20 +91,10 @@ export async function startAnvil(): Promise<string> {
     console.error("[anvil] failed to start:", err.message);
   });
 
-  // Poll until the node is ready (max 15 s).
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const res = execSync(
-        `curl -sf -X POST ${rpcUrl} -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'`,
-        { stdio: "pipe" }
-      );
-      const body = JSON.parse(res.toString());
-      if (body.result) break;
-    } catch {
-      await sleep(200);
-    }
-  }
+  // Wait until the JSON-RPC socket is live before returning.
+  // waitForRpc polls eth_blockNumber (50 ms × 60 = 3 s max) and throws if
+  // anvil never comes up, preventing forge script from hitting ECONNREFUSED.
+  await waitForRpc(rpcUrl);
 
   return rpcUrl;
 }
