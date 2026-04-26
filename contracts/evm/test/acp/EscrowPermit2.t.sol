@@ -23,6 +23,17 @@ contract MockPermit2 {
     ) external {
         ERC20(permit.permitted.token).transferFrom(owner, transferDetails.to, transferDetails.requestedAmount);
     }
+
+    function permitWitnessTransferFrom(
+        IPermit2.PermitTransferFrom calldata permit,
+        IPermit2.SignatureTransferDetails calldata transferDetails,
+        address owner,
+        bytes32,
+        string calldata,
+        bytes calldata
+    ) external {
+        ERC20(permit.permitted.token).transferFrom(owner, transferDetails.to, transferDetails.requestedAmount);
+    }
 }
 
 contract EscrowPermit2Test is Test {
@@ -103,6 +114,43 @@ contract EscrowPermit2Test is Test {
     function test_fundWithPermit2_constructor_revert_zeroPermit2() public {
         vm.expectRevert(Escrow.ZeroAddress.selector);
         new Escrow(admin, address(0));
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Cross-token drain protection (#56)
+    // ─────────────────────────────────────────────────────────────
+
+    /// @notice Proves that a depositor cannot drain token Y by providing a permit for token X.
+    ///         The `permit.permitted.token` must match the `token` argument exactly.
+    function test_fundWithPermit2_revert_tokenMismatch() public {
+        MockToken otherToken = new MockToken();
+        // Permit is for `otherToken` but caller passes `token` as the target
+        IPermit2.PermitTransferFrom memory permit = IPermit2.PermitTransferFrom({
+            permitted: IPermit2.TokenPermissions({token: address(otherToken), amount: AMOUNT}),
+            nonce: 0,
+            deadline: block.timestamp + 1 hours
+        });
+        vm.expectRevert(
+            abi.encodeWithSelector(Escrow.Permit2TokenMismatch.selector, address(otherToken), address(token))
+        );
+        escrow.fundWithPermit2(depositor, JOB_ID, address(token), AMOUNT, permit, hex"1234");
+    }
+
+    /// @notice Proves that amount in permit must match the requested amount.
+    function test_fundWithPermit2_revert_amountMismatch() public {
+        IPermit2.PermitTransferFrom memory permit = IPermit2.PermitTransferFrom({
+            permitted: IPermit2.TokenPermissions({token: address(token), amount: AMOUNT / 2}),
+            nonce: 0,
+            deadline: block.timestamp + 1 hours
+        });
+        vm.expectRevert(abi.encodeWithSelector(Escrow.Permit2AmountMismatch.selector, AMOUNT / 2, AMOUNT));
+        escrow.fundWithPermit2(depositor, JOB_ID, address(token), AMOUNT, permit, hex"1234");
+    }
+
+    /// @notice Proves the witness type constants are correctly set.
+    function test_witnessTypeHash_isCorrect() public view {
+        bytes32 expected = keccak256(bytes(escrow.ESCROW_WITNESS_TYPE()));
+        assertEq(escrow.ESCROW_WITNESS_TYPEHASH(), expected);
     }
 
     /// @notice Standard fund() still works after Permit2 constructor change.

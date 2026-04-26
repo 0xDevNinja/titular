@@ -63,7 +63,7 @@ contract BuybackBurnerTest is Test {
     address internal executor = makeAddr("executor");
     address internal stranger = makeAddr("stranger");
 
-    // FIXED_OUTPUT must be >= floor = AMOUNT_IN * minOutBps / 10000 = 1000e18 * 9000 / 10000 = 900e18
+    // FIXED_OUTPUT must be >= minTituOut floor (set to 900e18 = 90% of AMOUNT_IN in TITU terms)
     uint256 internal constant FIXED_OUTPUT = 950e18;
     uint256 internal constant AMOUNT_IN = 1000e18;
 
@@ -84,7 +84,7 @@ contract BuybackBurnerTest is Test {
             address(payment),
             address(titu),
             path,
-            9000, // 90% min out floor
+            900e18, // minTituOut floor: 900 TITU (absolute, not BPS)
             300 // 5 min swap deadline
         );
 
@@ -105,7 +105,7 @@ contract BuybackBurnerTest is Test {
         assertEq(address(burner.router()), address(router));
         assertEq(burner.paymentToken(), address(payment));
         assertEq(address(burner.titu()), address(titu));
-        assertEq(burner.minOutBps(), 9000);
+        assertEq(burner.minTituOut(), 900e18);
         assertEq(burner.swapDeadlineBuffer(), 300);
         address[] memory path = burner.getSwapPath();
         assertEq(path[0], address(payment));
@@ -120,12 +120,16 @@ contract BuybackBurnerTest is Test {
         new BuybackBurner(address(0), address(router), address(payment), address(titu), path, 9000, 300);
     }
 
-    function test_constructor_revert_invalidBps() public {
+    /// @notice `InvalidBps` was removed; any uint256 is a valid minTituOut now.
+    ///         Verify that a large minTituOut value does not revert during construction.
+    function test_constructor_largeMinTituOut_doesNotRevert() public {
         address[] memory path = new address[](2);
         path[0] = address(payment);
         path[1] = address(titu);
-        vm.expectRevert(BuybackBurner.InvalidBps.selector);
-        new BuybackBurner(admin, address(router), address(payment), address(titu), path, 10_001, 300);
+        // Should NOT revert — minTituOut has no upper bound
+        BuybackBurner b =
+            new BuybackBurner(admin, address(router), address(payment), address(titu), path, type(uint256).max, 300);
+        assertEq(b.minTituOut(), type(uint256).max);
     }
 
     function test_constructor_revert_invalidPath_tooShort() public {
@@ -235,19 +239,43 @@ contract BuybackBurnerTest is Test {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Admin: setMinOutBps
+    // Admin: setMinTituOut
     // ─────────────────────────────────────────────────────────────
 
-    function test_setMinOutBps() public {
+    function test_setMinTituOut() public {
         vm.prank(admin);
-        burner.setMinOutBps(8500);
-        assertEq(burner.minOutBps(), 8500);
+        burner.setMinTituOut(850e18);
+        assertEq(burner.minTituOut(), 850e18);
     }
 
-    function test_setMinOutBps_revert_tooHigh() public {
-        vm.expectRevert(BuybackBurner.InvalidBps.selector);
+    function test_setMinTituOut_zero_disablesFloor() public {
         vm.prank(admin);
-        burner.setMinOutBps(10_001);
+        burner.setMinTituOut(0);
+        assertEq(burner.minTituOut(), 0);
+    }
+
+    function test_setMinTituOut_revert_notAdmin() public {
+        vm.expectRevert();
+        vm.prank(stranger);
+        burner.setMinTituOut(100e18);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // rescueTokens: paymentToken blocked
+    // ─────────────────────────────────────────────────────────────
+
+    function test_rescueTokens_revert_paymentToken() public {
+        vm.expectRevert(BuybackBurner.RescuePaymentTokenForbidden.selector);
+        vm.prank(admin);
+        burner.rescueTokens(address(payment), admin, 1);
+    }
+
+    function test_rescueTokens_allowsOtherToken() public {
+        MockTITU other = new MockTITU();
+        other.mint(address(burner), 100e18);
+        vm.prank(admin);
+        burner.rescueTokens(address(other), admin, 100e18);
+        assertEq(other.balanceOf(admin), 100e18);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -257,12 +285,12 @@ contract BuybackBurnerTest is Test {
     function testFuzz_buybackAndBurn_variousAmounts(uint256 amountIn) public {
         amountIn = bound(amountIn, 1, type(uint128).max);
 
-        // Deploy a burner with minOutBps=0 (no floor) so the fixed-output mock always passes
+        // Deploy a burner with minTituOut=0 (no floor) so the fixed-output mock always passes
         address[] memory path = new address[](2);
         path[0] = address(payment);
         path[1] = address(titu);
         BuybackBurner fuzzBurner =
-            new BuybackBurner(admin, address(router), address(payment), address(titu), path, 0, 300);
+            new BuybackBurner(admin, address(router), address(payment), address(titu), path, 0, 300); // minTituOut=0
         bytes32 executorRole = fuzzBurner.EXECUTOR_ROLE();
         vm.prank(admin);
         fuzzBurner.grantRole(executorRole, executor);

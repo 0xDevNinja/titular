@@ -7,6 +7,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IJob} from "./IJob.sol";
 import {AgentRegistry} from "./AgentRegistry.sol";
+import {Escrow} from "./Escrow.sol";
+import {FeeSplitter} from "./FeeSplitter.sol";
+import {HookRegistry} from "./HookRegistry.sol";
+import {IHook} from "./IHook.sol";
 
 /// @title Job
 /// @notice ACP v2 Job — EIP-1167-clonable state machine for agent work agreements.
@@ -16,20 +20,26 @@ import {AgentRegistry} from "./AgentRegistry.sol";
 ///
 ///         Phase graph (allowed transitions):
 ///           Open      → Active     (agent accepts)
-///           Open      → Cancelled  (principal cancels; budget refunded)
+///           Open      → Cancelled  (principal cancels; escrow refunded via Escrow.refund)
 ///           Open      → Cancelled  (expiry triggers expireJob)
 ///           Active    → Review     (agent submits result)
 ///           Active    → Disputed   (principal raises dispute)
 ///           Active    → Cancelled  (expiry triggers expireJob)
-///           Review    → Completed  (principal/evaluator approves; escrow released)
+///           Review    → Completed  (principal/evaluator approves; Escrow.release → FeeSplitter)
 ///           Review    → Active     (evaluator rejects; agent may resubmit)
 ///           Review    → Disputed   (principal or agent raises dispute)
 ///           Completed → —          (terminal)
 ///           Cancelled → —          (terminal)
-///           Disputed  → Completed  (arbiter resolves agent-favoured; escrow released)
-///           Disputed  → Cancelled  (arbiter resolves principal-favoured; budget refunded)
+///           Disputed  → Completed  (arbiter resolves agent-favoured; Escrow.release → FeeSplitter)
+///           Disputed  → Cancelled  (arbiter resolves principal-favoured; escrow refunded)
 ///
-///         CEI order is enforced throughout; ReentrancyGuard on all token transfers.
+///         Token custody: budget is held by `Escrow` under (principal, jobId, token).
+///         Job never holds tokens itself; it only drives Escrow state transitions.
+///
+///         Hooks: registered in HookRegistry are called at each lifecycle point.
+///         Unapproved hooks are silently skipped (non-blocking).
+///
+///         CEI order is enforced throughout; ReentrancyGuard on all external calls.
 contract Job is IJob, ReentrancyGuard, Initializable {
     using SafeERC20 for IERC20;
 
@@ -52,8 +62,20 @@ contract Job is IJob, ReentrancyGuard, Initializable {
     /// @notice ERC-20 token used for payment (address(0) means native ETH — not supported in v1).
     address public token;
 
-    /// @notice Total budget locked in this contract.
+    /// @notice Total budget locked in Escrow under (principal, jobId, token).
     uint256 public budget;
+
+    /// @notice Escrow contract holding the job budget.
+    Escrow public escrow;
+
+    /// @notice FeeSplitter that distributes payment on completion.
+    FeeSplitter public feeSplitter;
+
+    /// @notice HookRegistry used to validate hook addresses before calling them.
+    HookRegistry public hookRegistry;
+
+    /// @notice Lifecycle hooks registered for this job.
+    address[] public hooks;
 
     /// @notice UNIX timestamp after which the job may be expired.
     uint64 public deadline;
@@ -113,6 +135,7 @@ contract Job is IJob, ReentrancyGuard, Initializable {
     error EvaluatorRequired();
     error DirectJobNoEvaluator();
     error TokenMismatch();
+    error UnapprovedHook(address hook);
 
     // ─────────────────────────────────────────────────────────────
     // Modifiers
@@ -144,8 +167,14 @@ contract Job is IJob, ReentrancyGuard, Initializable {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Initializer (replaces constructor for EIP-1167 clones)
+    // Constructor (disables initializers on the implementation)
     // ─────────────────────────────────────────────────────────────
+
+    /// @dev Prevents the implementation contract from being initialized directly.
+    ///      Only clones produced by JobFactory may be initialized.
+    constructor() {
+        _disableInitializers();
+    }
 
     // ─────────────────────────────────────────────────────────────
     // Init config struct (avoids stack-too-deep in initializer)
@@ -163,6 +192,14 @@ contract Job is IJob, ReentrancyGuard, Initializable {
         JobType jobType;
         address evaluator;
         address arbiter;
+        /// @notice Escrow contract holding the job budget.
+        Escrow escrow;
+        /// @notice FeeSplitter that distributes payment on completion.
+        FeeSplitter feeSplitter;
+        /// @notice HookRegistry used to validate hooks.
+        HookRegistry hookRegistry;
+        /// @notice Optional lifecycle hooks for this job (each must be approved in hookRegistry).
+        address[] hooks;
     }
 
     /// @notice Initialise a newly-cloned Job contract.
@@ -175,8 +212,16 @@ contract Job is IJob, ReentrancyGuard, Initializable {
         // slither-disable-next-line timestamp
         if (p.deadline <= block.timestamp) revert InvalidDeadline();
         if (p.arbiter == address(0)) revert ZeroAddress();
+        if (address(p.escrow) == address(0)) revert ZeroAddress();
+        if (address(p.feeSplitter) == address(0)) revert ZeroAddress();
+        if (address(p.hookRegistry) == address(0)) revert ZeroAddress();
         if (p.jobType == JobType.Evaluated && p.evaluator == address(0)) revert EvaluatorRequired();
         if (p.jobType == JobType.Direct && p.evaluator != address(0)) revert DirectJobNoEvaluator();
+
+        // Validate all hooks are approved before storing them
+        for (uint256 i = 0; i < p.hooks.length; ++i) {
+            if (!p.hookRegistry.isApproved(p.hooks[i])) revert UnapprovedHook(p.hooks[i]);
+        }
 
         jobId = p.jobId;
         principal = p.principal;
@@ -188,6 +233,13 @@ contract Job is IJob, ReentrancyGuard, Initializable {
         jobType = p.jobType;
         evaluator = p.evaluator;
         arbiter = p.arbiter;
+        escrow = p.escrow;
+        feeSplitter = p.feeSplitter;
+        hookRegistry = p.hookRegistry;
+        // Copy hooks array into storage
+        for (uint256 i = 0; i < p.hooks.length; ++i) {
+            hooks.push(p.hooks[i]);
+        }
 
         // phase defaults to Open (Phase(0))
 
@@ -217,6 +269,9 @@ contract Job is IJob, ReentrancyGuard, Initializable {
         agentId = _agentId;
 
         emit AgentAccepted(jobId, msg.sender, _agentId);
+
+        // Hooks (non-blocking; unapproved hooks are skipped)
+        _fireHooks(HookEvent.Accept);
     }
 
     /// @notice Submit a result URI. Transitions Active → Review.
@@ -229,6 +284,9 @@ contract Job is IJob, ReentrancyGuard, Initializable {
         resultSubmittedAt = uint64(block.timestamp);
 
         emit ResultSubmitted(jobId, msg.sender, _resultURI);
+
+        // Hooks
+        _fireHooks(HookEvent.Submit);
     }
 
     /// @notice Approve a submitted result. Transitions Review → Completed.
@@ -258,6 +316,9 @@ contract Job is IJob, ReentrancyGuard, Initializable {
         resultSubmittedAt = 0;
 
         emit ResultRejected(jobId, msg.sender, reason);
+
+        // Hooks
+        _fireHooks(HookEvent.Reject);
     }
 
     /// @notice Release budget to the agent after grace period (Direct jobs) or after
@@ -269,7 +330,7 @@ contract Job is IJob, ReentrancyGuard, Initializable {
         _completeJob();
     }
 
-    /// @notice Cancel the job. Refunds the principal.
+    /// @notice Cancel the job. Refunds the principal via Escrow.
     ///         Allowed from Open (any time) or Active/Review (principal only, before agent submits final).
     /// @param reason Human-readable reason.
     function cancel(string calldata reason) external nonReentrant {
@@ -281,12 +342,18 @@ contract Job is IJob, ReentrancyGuard, Initializable {
 
         // Effects before interaction
         phase = Phase.Cancelled;
+        uint256 refundAmt = budget;
+        budget = 0;
         emit JobCancelled(jobId, msg.sender, reason);
 
-        // Interaction
-        uint256 refund = budget;
-        budget = 0;
-        IERC20(token).safeTransfer(principal, refund);
+        // Hooks fired before escrow interaction
+        _fireHooks(HookEvent.Cancel);
+
+        // Interaction — return funds from escrow to principal
+        escrow.refund(principal, jobId, token);
+
+        // Silence unused variable warning (refundAmt recorded for event readability)
+        refundAmt;
     }
 
     /// @notice Raise a dispute. Transitions Active or Review → Disputed.
@@ -303,24 +370,27 @@ contract Job is IJob, ReentrancyGuard, Initializable {
     }
 
     /// @notice Resolve a dispute. Transitions Disputed → Completed (agent wins) or Cancelled (principal wins).
-    /// @param agentFavoured If true, releases budget to agent; if false, refunds principal.
+    /// @param agentFavoured If true, releases budget to agent via FeeSplitter; if false, refunds principal via Escrow.
     function resolveDispute(bool agentFavoured) external onlyPhase(Phase.Disputed) onlyArbiter nonReentrant {
         if (agentFavoured) {
             emit DisputeResolved(jobId, msg.sender, true);
             _completeJob();
         } else {
             phase = Phase.Cancelled;
+            budget = 0;
             emit DisputeResolved(jobId, msg.sender, false);
             emit JobCancelled(jobId, msg.sender, "dispute resolved: principal favoured");
 
-            uint256 refund = budget;
-            budget = 0;
-            IERC20(token).safeTransfer(principal, refund);
+            // Hooks
+            _fireHooks(HookEvent.Cancel);
+
+            // Interaction — return funds from escrow to principal
+            escrow.refund(principal, jobId, token);
         }
     }
 
     /// @notice Expire a job that has passed its deadline without being completed.
-    ///         Open → Cancelled (refund principal), Active → Cancelled (refund principal).
+    ///         Open → Cancelled (refund principal via Escrow), Active → Cancelled (refund principal via Escrow).
     function expireJob() external nonReentrant {
         // slither-disable-next-line timestamp
         if (block.timestamp <= deadline) revert JobNotExpired();
@@ -330,11 +400,14 @@ contract Job is IJob, ReentrancyGuard, Initializable {
         }
 
         phase = Phase.Cancelled;
+        budget = 0;
         emit JobCancelled(jobId, msg.sender, "expired");
 
-        uint256 refund = budget;
-        budget = 0;
-        IERC20(token).safeTransfer(principal, refund);
+        // Hooks
+        _fireHooks(HookEvent.Cancel);
+
+        // Interaction — return funds from escrow to principal
+        escrow.refund(principal, jobId, token);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -351,17 +424,70 @@ contract Job is IJob, ReentrancyGuard, Initializable {
     // Internal helpers
     // ─────────────────────────────────────────────────────────────
 
-    /// @dev Finalise job: set terminal state, emit event, transfer budget to agent.
-    ///      Must be called before external token transfer (CEI).
+    /// @dev Hook lifecycle event enum used by _fireHooks.
+    enum HookEvent {
+        Accept,
+        Submit,
+        Approve,
+        Reject,
+        Cancel
+    }
+
+    /// @dev Finalise job: set terminal state, emit event, then route payment through
+    ///      Escrow.release → FeeSplitter (Schedule A: 95% agent, 3% treasury, 2% buyback).
+    ///      CEI: all state updates before external interactions.
     function _completeJob() internal {
         phase = Phase.Completed;
         uint256 payout = budget;
         budget = 0;
-        address recipient = agent;
+        address _agent = agent;
+        uint256 _jobId = jobId;
+        address _token = token;
+        address _principal = principal;
 
-        emit JobCompleted(jobId, msg.sender, payout);
+        emit JobCompleted(_jobId, msg.sender, payout);
 
-        // Interaction last
-        IERC20(token).safeTransfer(recipient, payout);
+        // Hooks fired before escrow interaction (state already updated)
+        _fireHooks(HookEvent.Approve);
+
+        // Step 1: Escrow releases the full budget to this Job clone
+        Escrow.Recipient[] memory recipients = new Escrow.Recipient[](1);
+        recipients[0] = Escrow.Recipient({to: address(this), amount: payout});
+        escrow.release(_principal, _jobId, _token, recipients);
+
+        // Step 2: Approve FeeSplitter to pull the budget from this contract
+        IERC20(_token).forceApprove(address(feeSplitter), payout);
+
+        // Step 3: FeeSplitter distributes: 95% → agent, 3% → treasury, 2% → buyback (Schedule A)
+        feeSplitter.split(_token, payout, _agent, FeeSplitter.Schedule.A);
+    }
+
+    /// @dev Fire all registered hooks for a given lifecycle event.
+    ///      Hooks that are no longer approved in HookRegistry are skipped silently.
+    ///      Any individual hook that reverts causes the entire transaction to revert
+    ///      (blocking hook behaviour).  Use try/catch in hook implementations for
+    ///      permissive behaviour.
+    /// @param ev The hook lifecycle event.
+    function _fireHooks(HookEvent ev) internal {
+        uint256 len = hooks.length;
+        if (len == 0) return;
+        HookRegistry _registry = hookRegistry;
+        uint256 _jobId = jobId;
+        bytes memory ctx = abi.encode(_jobId);
+        for (uint256 i = 0; i < len; ++i) {
+            address h = hooks[i];
+            if (!_registry.isApproved(h)) continue; // skip revoked hooks
+            if (ev == HookEvent.Accept) {
+                IHook(h).onAccept(_jobId, ctx);
+            } else if (ev == HookEvent.Submit) {
+                IHook(h).onSubmit(_jobId, ctx);
+            } else if (ev == HookEvent.Approve) {
+                IHook(h).onApprove(_jobId, ctx);
+            } else if (ev == HookEvent.Reject) {
+                IHook(h).onReject(_jobId, ctx);
+            } else {
+                IHook(h).onCancel(_jobId, ctx);
+            }
+        }
     }
 }

@@ -19,6 +19,7 @@ interface IPermit2 {
         address to;
         uint256 requestedAmount;
     }
+
     /// @notice Transfer tokens using a signed Permit2 message.
     /// @param permit Permit data (token, amount, nonce, deadline).
     /// @param transferDetails Transfer destination and amount.
@@ -28,6 +29,24 @@ interface IPermit2 {
         PermitTransferFrom calldata permit,
         SignatureTransferDetails calldata transferDetails,
         address owner,
+        bytes calldata signature
+    ) external;
+
+    /// @notice Transfer tokens using a signed Permit2 message that includes a
+    ///         typed witness binding additional data to the signature domain.
+    /// @param permit          Permit data (token, amount, nonce, deadline).
+    /// @param transferDetails Transfer destination and amount.
+    /// @param owner           The account whose tokens will be transferred.
+    /// @param witness         Keccak-256 hash of the encoded witness struct.
+    /// @param witnessTypeString ABI type string for the witness struct, appended to
+    ///                          the Permit2 EIP-712 type hash (see Permit2 spec).
+    /// @param signature       EIP-712 signature over the permit + witness.
+    function permitWitnessTransferFrom(
+        PermitTransferFrom calldata permit,
+        SignatureTransferDetails calldata transferDetails,
+        address owner,
+        bytes32 witness,
+        string calldata witnessTypeString,
         bytes calldata signature
     ) external;
 }
