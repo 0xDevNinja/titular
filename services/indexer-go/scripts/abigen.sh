@@ -17,10 +17,20 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# Pinned tool version. Bump in lockstep with go-ethereum in go.mod so the
-# generated bindings stay ABI-compatible with the runtime library.
+# Pinned tool versions.
+#
+# ABIGEN_VERSION: bump in lockstep with go-ethereum in go.mod so the generated
+# bindings stay ABI-compatible with the runtime library.
+#
+# Foundry: bindings are sensitive to solc/ABI key ordering and metadata bytes
+# emitted by `forge build`. CI uses `foundry-rs/foundry-toolchain@v1` pinned to
+# `version: stable` (see .github/workflows/test.yml::abigen-check). Run this
+# script locally with the same channel — `foundryup --version stable` — to
+# avoid drift against the artifacts CI regenerates.
 # -----------------------------------------------------------------------------
 ABIGEN_VERSION="${ABIGEN_VERSION:-v1.17.2}"
+# FOUNDRY_VERSION (informational): stable channel — keep in lockstep with
+# .github/workflows/*.yml `foundry-rs/foundry-toolchain@v1` `with: version:`.
 
 # -----------------------------------------------------------------------------
 # Paths.
