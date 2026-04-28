@@ -10,8 +10,14 @@ migrations/
                           jobs, job_events, memos, processed_logs)
   0001_init.down.sql    ← reverse
 migrations.go           ← embedded loader + ordering invariants
+migrate.go              ← golang-migrate/v4 wrapper (Up/Down/Steps/Version)
 migrations_test.go      ← schema sanity tests
+migrations_integration_test.go
+                        ← `-tags integration` apply→down→up cycle (dockertest)
 ```
+
+The CLI that drives the wrapper lives at
+`services/indexer-go/cmd/migrate/main.go`.
 
 ## Tables
 
@@ -39,19 +45,51 @@ migrations_test.go      ← schema sanity tests
 
 1. Pick the next free version number `N`.
 2. Create `NNNN_<slug>.up.sql` and `NNNN_<slug>.down.sql` under `migrations/`.
-3. Each file MUST wrap its body in `BEGIN;` / `COMMIT;`.
+3. **Do NOT** wrap the file in `BEGIN;` / `COMMIT;`. The migration runner
+   (`golang-migrate`'s pgx/v5 driver) wraps each file in its own transaction;
+   a nested in-file `BEGIN` warns and an in-file `COMMIT` closes the wrapper
+   early. If a migration genuinely needs to run outside a transaction (e.g.
+   `CREATE INDEX CONCURRENTLY`), put `-- migrate:no-transaction` on the
+   first line.
 4. Run `go test ./internal/db/...` — tests assert contiguous versions, paired
-   up/down files, matching slugs, transactional bracketing, and that every
+   up/down files, matching slugs, no nested transactions, and that every
    advertised table is created by some up migration.
 5. If you add a new table or enum, also extend `Tables` / `Enums` in
    `migrations.go` so operator tooling stays in sync.
 
 ## Applying migrations
 
-This package only loads + orders migrations; the apply driver lives elsewhere
-(future work — see follow-up issues for runtime apply, schema-version table,
-and idempotency-on-apply). To apply by hand against a local dev DB:
+The `migrate` binary in `cmd/migrate/` drives the wrapper end-to-end:
 
 ```bash
-psql "$DATABASE_URL" -f services/indexer-go/internal/db/migrations/0001_init.up.sql
+go build -o /tmp/migrate ./cmd/migrate
+DATABASE_URL=postgres://titular:titular@localhost:5432/titular?sslmode=disable \
+    /tmp/migrate up        # apply every pending migration
+/tmp/migrate version       # → "version=1 dirty=false"
+/tmp/migrate steps -1      # revert one
+
+# Destructive commands refuse to run without an explicit override. Set
+# MIGRATE_ALLOW_DESTRUCTIVE=1 to opt in (CI must NOT export this).
+MIGRATE_ALLOW_DESTRUCTIVE=1 /tmp/migrate down       # revert everything
+MIGRATE_ALLOW_DESTRUCTIVE=1 /tmp/migrate force 0    # recovery
 ```
+
+Both the libpq URI form (`postgres://...`) and the migrate-specific
+`pgx5://...` form are accepted; the wrapper normalises before handing the
+DSN to the driver registry.
+
+Programmatic use (e.g. from the indexer-go `main.go` boot path) uses the
+`db.New(dsn)` / `*Migrator` API directly — see `migrate.go`.
+
+## Integration test
+
+The end-to-end cycle (apply → down → re-apply, cross-checking
+`schema_migrations` and `pg_class`) lives behind the `integration` build
+tag and uses `ory/dockertest` to boot an ephemeral Postgres 16 container:
+
+```bash
+go test -tags integration ./internal/db/...
+```
+
+Without Docker the tests skip with a clear message. The default
+`go test ./...` invocation (used by CI) does not pull Docker in.

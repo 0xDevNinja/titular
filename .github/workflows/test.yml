@@ -9,6 +9,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Detect which top-level paths changed in this PR/push so downstream jobs
+  # can skip work that doesn't apply. Cheap (~5s) and avoids spinning a
+  # 5-minute Postgres container for diffs that never touch the indexer.
+  changes:
+    name: changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      indexer: ${{ steps.filter.outputs.indexer }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            indexer:
+              - 'services/indexer-go/**'
+              - '.github/workflows/test.yml'
+
   node-test:
     name: node test
     runs-on: ubuntu-latest
@@ -40,6 +59,25 @@ jobs:
           cache: true
       - run: go test -race ./...
         working-directory: services/${{ matrix.service }}
+
+  # Integration tests for indexer-go (dockertest-driven Postgres apply →
+  # down → re-apply). Build-tag-gated so they don't run with the rest of
+  # `go test`. Skipped on PRs that don't touch services/indexer-go to keep
+  # PR CI fast for unrelated changes. ubuntu-latest already has Docker.
+  indexer-integration:
+    name: indexer-go integration
+    needs: changes
+    if: needs.changes.outputs.indexer == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - run: go test -tags integration ./internal/db/... -count=1 -timeout 5m
+        working-directory: services/indexer-go
 
   rust-test:
     name: cargo test

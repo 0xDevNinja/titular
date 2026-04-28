@@ -1,0 +1,32 @@
+# trivy ignore — CVEs we have triaged and accepted.
+#
+# Only test-only transitive dependencies belong here. Runtime deps must be
+# fixed by version bump, never silenced. Each entry must record:
+#   - the CVE id,
+#   - the package it was reported against,
+#   - the rationale (test-only path / not linked into prod binary),
+#   - and ideally the upstream fix tracker.
+#
+# Re-audit on every dockertest bump. If any of these flips into a runtime
+# path, remove the suppression and bump.
+
+# --- services/indexer-go test deps (ory/dockertest/v3 chain) ---------------
+#
+# dockertest spins up Postgres in a container for the migration apply/rollback
+# integration test. It pulls docker/cli, docker/docker, and runc transitively.
+# These libraries are imported only by *_integration_test.go (build tag
+# `integration`) and never linked into the indexer-go binary — so a CVE in
+# their daemon-side code path is not exploitable in our deployed image.
+
+# docker/docker — Moby project. Transitive via dockertest.
+CVE-2026-34040  # daemon-only path, test-only dep; tracking dockertest upgrade
+CVE-2024-41110  # AuthZ plugin bypass, daemon-only; test-only dep
+
+# docker/cli — CLI scanner. Transitive via dockertest.
+CVE-2025-15558  # CLI-only, test-only dep
+
+# opencontainers/runc — container runtime. Transitive via dockertest.
+CVE-2025-52881  # runtime-only, test-only dep
+CVE-2025-52565  # runtime-only, test-only dep
+CVE-2025-31133  # runtime-only, test-only dep
+CVE-2024-21626  # leaked fd, runtime-only; test-only dep
