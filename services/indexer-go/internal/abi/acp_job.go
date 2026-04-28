@@ -41,11 +41,15 @@ type JobInitParams struct {
 	JobType       uint8
 	Evaluator     common.Address
 	Arbiter       common.Address
+	Escrow        common.Address
+	FeeSplitter   common.Address
+	HookRegistry  common.Address
+	Hooks         []common.Address
 }
 
 // JobMetaData contains all meta data concerning the Job contract.
 var JobMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"function\",\"name\":\"DISPUTE_GRACE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"RELEASE_GRACE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"accept\",\"inputs\":[{\"name\":\"_agentId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"agent\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"agentId\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"approveResult\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"arbiter\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"budget\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"cancel\",\"inputs\":[{\"name\":\"reason\",\"type\":\"string\",\"internalType\":\"string\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"currentPhase\",\"inputs\":[],\"outputs\":[{\"name\":\"current\",\"type\":\"uint8\",\"internalType\":\"enumIJob.Phase\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"deadline\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"evaluator\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"expireJob\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"initialize\",\"inputs\":[{\"name\":\"p\",\"type\":\"tuple\",\"internalType\":\"structJob.InitParams\",\"components\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"principal\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"registry\",\"type\":\"address\",\"internalType\":\"contractAgentRegistry\"},{\"name\":\"targetAgentId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"token\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"budget\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"jobType\",\"type\":\"uint8\",\"internalType\":\"enumIJob.JobType\"},{\"name\":\"evaluator\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"arbiter\",\"type\":\"address\",\"internalType\":\"address\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"jobId\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"jobType\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint8\",\"internalType\":\"enumIJob.JobType\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"phase\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint8\",\"internalType\":\"enumIJob.Phase\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"principal\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"raiseDispute\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"registry\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractAgentRegistry\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"rejectResult\",\"inputs\":[{\"name\":\"reason\",\"type\":\"string\",\"internalType\":\"string\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"release\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"resolveDispute\",\"inputs\":[{\"name\":\"agentFavoured\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"resultSubmittedAt\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"resultURI\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"string\",\"internalType\":\"string\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"submitResult\",\"inputs\":[{\"name\":\"_resultURI\",\"type\":\"string\",\"internalType\":\"string\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"targetAgentId\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"token\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"AgentAccepted\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"agent\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"agentId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"DisputeRaised\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"raisedBy\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"DisputeResolved\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"resolver\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"agentFavoured\",\"type\":\"bool\",\"indexed\":false,\"internalType\":\"bool\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"EvaluatorAssigned\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"evaluator\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Initialized\",\"inputs\":[{\"name\":\"version\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"JobCancelled\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"cancelledBy\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"reason\",\"type\":\"string\",\"indexed\":false,\"internalType\":\"string\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"JobCompleted\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"releasedBy\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"amount\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"JobInitialised\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"principal\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"agentId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"jobType\",\"type\":\"uint8\",\"indexed\":false,\"internalType\":\"enumIJob.JobType\"},{\"name\":\"budget\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"token\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"address\"},{\"name\":\"deadline\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"ResultApproved\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"evaluator\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"ResultRejected\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"evaluator\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"reason\",\"type\":\"string\",\"indexed\":false,\"internalType\":\"string\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"ResultSubmitted\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"agent\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"resultURI\",\"type\":\"string\",\"indexed\":false,\"internalType\":\"string\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AgentInactive\",\"inputs\":[{\"name\":\"id\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"AgentNotFound\",\"inputs\":[{\"name\":\"id\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"AlreadyInitialized\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"DirectJobNoEvaluator\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"EvaluatorRequired\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"GracePeriodActive\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidDeadline\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidInitialization\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidJobType\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"JobNotExpired\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotAgent\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotArbiter\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotEvaluator\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotInitializing\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotPrincipal\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ReentrancyGuardReentrantCall\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"SafeERC20FailedOperation\",\"inputs\":[{\"name\":\"token\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"TokenMismatch\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"WrongPhase\",\"inputs\":[{\"name\":\"current\",\"type\":\"uint8\",\"internalType\":\"enumIJob.Phase\"},{\"name\":\"required\",\"type\":\"uint8\",\"internalType\":\"enumIJob.Phase\"}]},{\"type\":\"error\",\"name\":\"ZeroAddress\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ZeroAmount\",\"inputs\":[]}]",
+	ABI: "[{\"type\":\"constructor\",\"inputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"DISPUTE_GRACE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"RELEASE_GRACE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"accept\",\"inputs\":[{\"name\":\"_agentId\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"agent\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"agentId\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"approveResult\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"arbiter\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"budget\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"cancel\",\"inputs\":[{\"name\":\"reason\",\"type\":\"string\",\"internalType\":\"string\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"currentPhase\",\"inputs\":[],\"outputs\":[{\"name\":\"current\",\"type\":\"uint8\",\"internalType\":\"enumIJob.Phase\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"deadline\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"escrow\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractEscrow\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"evaluator\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"expireJob\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"feeSplitter\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractFeeSplitter\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"hookRegistry\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractHookRegistry\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"hooks\",\"inputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"initialize\",\"inputs\":[{\"name\":\"p\",\"type\":\"tuple\",\"internalType\":\"structJob.InitParams\",\"components\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"principal\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"registry\",\"type\":\"address\",\"internalType\":\"contractAgentRegistry\"},{\"name\":\"targetAgentId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"token\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"budget\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"jobType\",\"type\":\"uint8\",\"internalType\":\"enumIJob.JobType\"},{\"name\":\"evaluator\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"arbiter\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"escrow\",\"type\":\"address\",\"internalType\":\"contractEscrow\"},{\"name\":\"feeSplitter\",\"type\":\"address\",\"internalType\":\"contractFeeSplitter\"},{\"name\":\"hookRegistry\",\"type\":\"address\",\"internalType\":\"contractHookRegistry\"},{\"name\":\"hooks\",\"type\":\"address[]\",\"internalType\":\"address[]\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"jobId\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"jobType\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint8\",\"internalType\":\"enumIJob.JobType\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"phase\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint8\",\"internalType\":\"enumIJob.Phase\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"principal\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"raiseDispute\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"registry\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractAgentRegistry\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"rejectResult\",\"inputs\":[{\"name\":\"reason\",\"type\":\"string\",\"internalType\":\"string\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"release\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"resolveDispute\",\"inputs\":[{\"name\":\"agentFavoured\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"resultSubmittedAt\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"resultURI\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"string\",\"internalType\":\"string\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"submitResult\",\"inputs\":[{\"name\":\"_resultURI\",\"type\":\"string\",\"internalType\":\"string\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"targetAgentId\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"token\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"AgentAccepted\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"agent\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"agentId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"DisputeRaised\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"raisedBy\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"DisputeResolved\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"resolver\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"agentFavoured\",\"type\":\"bool\",\"indexed\":false,\"internalType\":\"bool\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"EvaluatorAssigned\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"evaluator\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Initialized\",\"inputs\":[{\"name\":\"version\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"JobCancelled\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"cancelledBy\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"reason\",\"type\":\"string\",\"indexed\":false,\"internalType\":\"string\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"JobCompleted\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"releasedBy\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"amount\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"JobInitialised\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"principal\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"agentId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"jobType\",\"type\":\"uint8\",\"indexed\":false,\"internalType\":\"enumIJob.JobType\"},{\"name\":\"budget\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"token\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"address\"},{\"name\":\"deadline\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"ResultApproved\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"evaluator\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"ResultRejected\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"evaluator\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"reason\",\"type\":\"string\",\"indexed\":false,\"internalType\":\"string\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"ResultSubmitted\",\"inputs\":[{\"name\":\"jobId\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"agent\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"resultURI\",\"type\":\"string\",\"indexed\":false,\"internalType\":\"string\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AgentInactive\",\"inputs\":[{\"name\":\"id\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"AgentNotFound\",\"inputs\":[{\"name\":\"id\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"AlreadyInitialized\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"DirectJobNoEvaluator\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"EvaluatorRequired\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"GracePeriodActive\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidDeadline\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidInitialization\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidJobType\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"JobNotExpired\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotAgent\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotArbiter\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotEvaluator\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotInitializing\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotPrincipal\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ReentrancyGuardReentrantCall\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"SafeERC20FailedOperation\",\"inputs\":[{\"name\":\"token\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"TokenMismatch\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"UnapprovedHook\",\"inputs\":[{\"name\":\"hook\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"WrongPhase\",\"inputs\":[{\"name\":\"current\",\"type\":\"uint8\",\"internalType\":\"enumIJob.Phase\"},{\"name\":\"required\",\"type\":\"uint8\",\"internalType\":\"enumIJob.Phase\"}]},{\"type\":\"error\",\"name\":\"ZeroAddress\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ZeroAmount\",\"inputs\":[]}]",
 }
 
 // JobABI is the input ABI used to generate the binding from.
@@ -442,6 +446,37 @@ func (_Job *JobCallerSession) Deadline() (uint64, error) {
 	return _Job.Contract.Deadline(&_Job.CallOpts)
 }
 
+// Escrow is a free data retrieval call binding the contract method 0xe2fdcc17.
+//
+// Solidity: function escrow() view returns(address)
+func (_Job *JobCaller) Escrow(opts *bind.CallOpts) (common.Address, error) {
+	var out []interface{}
+	err := _Job.contract.Call(opts, &out, "escrow")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
+}
+
+// Escrow is a free data retrieval call binding the contract method 0xe2fdcc17.
+//
+// Solidity: function escrow() view returns(address)
+func (_Job *JobSession) Escrow() (common.Address, error) {
+	return _Job.Contract.Escrow(&_Job.CallOpts)
+}
+
+// Escrow is a free data retrieval call binding the contract method 0xe2fdcc17.
+//
+// Solidity: function escrow() view returns(address)
+func (_Job *JobCallerSession) Escrow() (common.Address, error) {
+	return _Job.Contract.Escrow(&_Job.CallOpts)
+}
+
 // Evaluator is a free data retrieval call binding the contract method 0x9cb93dd1.
 //
 // Solidity: function evaluator() view returns(address)
@@ -471,6 +506,99 @@ func (_Job *JobSession) Evaluator() (common.Address, error) {
 // Solidity: function evaluator() view returns(address)
 func (_Job *JobCallerSession) Evaluator() (common.Address, error) {
 	return _Job.Contract.Evaluator(&_Job.CallOpts)
+}
+
+// FeeSplitter is a free data retrieval call binding the contract method 0x6052970c.
+//
+// Solidity: function feeSplitter() view returns(address)
+func (_Job *JobCaller) FeeSplitter(opts *bind.CallOpts) (common.Address, error) {
+	var out []interface{}
+	err := _Job.contract.Call(opts, &out, "feeSplitter")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
+}
+
+// FeeSplitter is a free data retrieval call binding the contract method 0x6052970c.
+//
+// Solidity: function feeSplitter() view returns(address)
+func (_Job *JobSession) FeeSplitter() (common.Address, error) {
+	return _Job.Contract.FeeSplitter(&_Job.CallOpts)
+}
+
+// FeeSplitter is a free data retrieval call binding the contract method 0x6052970c.
+//
+// Solidity: function feeSplitter() view returns(address)
+func (_Job *JobCallerSession) FeeSplitter() (common.Address, error) {
+	return _Job.Contract.FeeSplitter(&_Job.CallOpts)
+}
+
+// HookRegistry is a free data retrieval call binding the contract method 0x0ad63338.
+//
+// Solidity: function hookRegistry() view returns(address)
+func (_Job *JobCaller) HookRegistry(opts *bind.CallOpts) (common.Address, error) {
+	var out []interface{}
+	err := _Job.contract.Call(opts, &out, "hookRegistry")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
+}
+
+// HookRegistry is a free data retrieval call binding the contract method 0x0ad63338.
+//
+// Solidity: function hookRegistry() view returns(address)
+func (_Job *JobSession) HookRegistry() (common.Address, error) {
+	return _Job.Contract.HookRegistry(&_Job.CallOpts)
+}
+
+// HookRegistry is a free data retrieval call binding the contract method 0x0ad63338.
+//
+// Solidity: function hookRegistry() view returns(address)
+func (_Job *JobCallerSession) HookRegistry() (common.Address, error) {
+	return _Job.Contract.HookRegistry(&_Job.CallOpts)
+}
+
+// Hooks is a free data retrieval call binding the contract method 0x864c17d7.
+//
+// Solidity: function hooks(uint256 ) view returns(address)
+func (_Job *JobCaller) Hooks(opts *bind.CallOpts, arg0 *big.Int) (common.Address, error) {
+	var out []interface{}
+	err := _Job.contract.Call(opts, &out, "hooks", arg0)
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
+}
+
+// Hooks is a free data retrieval call binding the contract method 0x864c17d7.
+//
+// Solidity: function hooks(uint256 ) view returns(address)
+func (_Job *JobSession) Hooks(arg0 *big.Int) (common.Address, error) {
+	return _Job.Contract.Hooks(&_Job.CallOpts, arg0)
+}
+
+// Hooks is a free data retrieval call binding the contract method 0x864c17d7.
+//
+// Solidity: function hooks(uint256 ) view returns(address)
+func (_Job *JobCallerSession) Hooks(arg0 *big.Int) (common.Address, error) {
+	return _Job.Contract.Hooks(&_Job.CallOpts, arg0)
 }
 
 // JobId is a free data retrieval call binding the contract method 0xc2939d97.
@@ -836,23 +964,23 @@ func (_Job *JobTransactorSession) ExpireJob() (*types.Transaction, error) {
 	return _Job.Contract.ExpireJob(&_Job.TransactOpts)
 }
 
-// Initialize is a paid mutator transaction binding the contract method 0xc4955ffc.
+// Initialize is a paid mutator transaction binding the contract method 0x5b75f1bf.
 //
-// Solidity: function initialize((uint256,address,address,uint256,address,uint256,uint64,uint8,address,address) p) returns()
+// Solidity: function initialize((uint256,address,address,uint256,address,uint256,uint64,uint8,address,address,address,address,address,address[]) p) returns()
 func (_Job *JobTransactor) Initialize(opts *bind.TransactOpts, p JobInitParams) (*types.Transaction, error) {
 	return _Job.contract.Transact(opts, "initialize", p)
 }
 
-// Initialize is a paid mutator transaction binding the contract method 0xc4955ffc.
+// Initialize is a paid mutator transaction binding the contract method 0x5b75f1bf.
 //
-// Solidity: function initialize((uint256,address,address,uint256,address,uint256,uint64,uint8,address,address) p) returns()
+// Solidity: function initialize((uint256,address,address,uint256,address,uint256,uint64,uint8,address,address,address,address,address,address[]) p) returns()
 func (_Job *JobSession) Initialize(p JobInitParams) (*types.Transaction, error) {
 	return _Job.Contract.Initialize(&_Job.TransactOpts, p)
 }
 
-// Initialize is a paid mutator transaction binding the contract method 0xc4955ffc.
+// Initialize is a paid mutator transaction binding the contract method 0x5b75f1bf.
 //
-// Solidity: function initialize((uint256,address,address,uint256,address,uint256,uint64,uint8,address,address) p) returns()
+// Solidity: function initialize((uint256,address,address,uint256,address,uint256,uint64,uint8,address,address,address,address,address,address[]) p) returns()
 func (_Job *JobTransactorSession) Initialize(p JobInitParams) (*types.Transaction, error) {
 	return _Job.Contract.Initialize(&_Job.TransactOpts, p)
 }

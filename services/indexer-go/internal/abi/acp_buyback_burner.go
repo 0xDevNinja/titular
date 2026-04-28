@@ -31,7 +31,7 @@ var (
 
 // BuybackBurnerMetaData contains all meta data concerning the BuybackBurner contract.
 var BuybackBurnerMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"constructor\",\"inputs\":[{\"name\":\"admin\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_router\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_paymentToken\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_titu\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_swapPath\",\"type\":\"address[]\",\"internalType\":\"address[]\"},{\"name\":\"_minOutBps\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_swapDeadlineBuffer\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"BPS\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"DEFAULT_ADMIN_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"EXECUTOR_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"buybackAndBurn\",\"inputs\":[{\"name\":\"amountIn\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"amountOutMin\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"getRoleAdmin\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getSwapPath\",\"inputs\":[],\"outputs\":[{\"name\":\"path\",\"type\":\"address[]\",\"internalType\":\"address[]\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"grantRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"hasRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"minOutBps\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"paymentToken\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"renounceRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"callerConfirmation\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"rescueTokens\",\"inputs\":[{\"name\":\"tokenAddr\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"to\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"amount\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"revokeRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"router\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIUniswapV2Router02\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"setMinOutBps\",\"inputs\":[{\"name\":\"newBps\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"setRouter\",\"inputs\":[{\"name\":\"newRouter\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"setSwapPath\",\"inputs\":[{\"name\":\"path\",\"type\":\"address[]\",\"internalType\":\"address[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"supportsInterface\",\"inputs\":[{\"name\":\"interfaceId\",\"type\":\"bytes4\",\"internalType\":\"bytes4\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"swapDeadlineBuffer\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"swapPath\",\"inputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"titu\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIERC20Burnable\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"BuybackAndBurn\",\"inputs\":[{\"name\":\"executor\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"paymentToken\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"amountIn\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"tituBurned\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MinOutBpsUpdated\",\"inputs\":[{\"name\":\"oldBps\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"newBps\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleAdminChanged\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"previousAdminRole\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"newAdminRole\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleGranted\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"sender\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleRevoked\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"sender\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RouterUpdated\",\"inputs\":[{\"name\":\"oldRouter\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"newRouter\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"SwapPathUpdated\",\"inputs\":[{\"name\":\"path\",\"type\":\"address[]\",\"indexed\":false,\"internalType\":\"address[]\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AccessControlBadConfirmation\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"AccessControlUnauthorizedAccount\",\"inputs\":[{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"neededRole\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InsufficientAmountOut\",\"inputs\":[{\"name\":\"amountIn\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"minOut\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"actualOut\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidBps\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidSwapPath\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ReentrancyGuardReentrantCall\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"SafeERC20FailedOperation\",\"inputs\":[{\"name\":\"token\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"ZeroAddress\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ZeroAmount\",\"inputs\":[]}]",
+	ABI: "[{\"type\":\"constructor\",\"inputs\":[{\"name\":\"admin\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_router\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_paymentToken\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_titu\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_swapPath\",\"type\":\"address[]\",\"internalType\":\"address[]\"},{\"name\":\"_minTituOut\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_swapDeadlineBuffer\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"DEFAULT_ADMIN_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"EXECUTOR_ROLE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"buybackAndBurn\",\"inputs\":[{\"name\":\"amountIn\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"amountOutMin\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"getRoleAdmin\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getSwapPath\",\"inputs\":[],\"outputs\":[{\"name\":\"path\",\"type\":\"address[]\",\"internalType\":\"address[]\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"grantRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"hasRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"minTituOut\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"paymentToken\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"renounceRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"callerConfirmation\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"rescueTokens\",\"inputs\":[{\"name\":\"tokenAddr\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"to\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"amount\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"revokeRole\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"router\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIUniswapV2Router02\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"setMinTituOut\",\"inputs\":[{\"name\":\"newMin\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"setRouter\",\"inputs\":[{\"name\":\"newRouter\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"setSwapPath\",\"inputs\":[{\"name\":\"path\",\"type\":\"address[]\",\"internalType\":\"address[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"supportsInterface\",\"inputs\":[{\"name\":\"interfaceId\",\"type\":\"bytes4\",\"internalType\":\"bytes4\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"swapDeadlineBuffer\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"swapPath\",\"inputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"titu\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIERC20Burnable\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"BuybackAndBurn\",\"inputs\":[{\"name\":\"executor\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"paymentToken\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"amountIn\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"tituBurned\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MinTituOutUpdated\",\"inputs\":[{\"name\":\"oldMin\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"newMin\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleAdminChanged\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"previousAdminRole\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"newAdminRole\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleGranted\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"sender\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RoleRevoked\",\"inputs\":[{\"name\":\"role\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"bytes32\"},{\"name\":\"account\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"sender\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RouterUpdated\",\"inputs\":[{\"name\":\"oldRouter\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"newRouter\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"SwapPathUpdated\",\"inputs\":[{\"name\":\"path\",\"type\":\"address[]\",\"indexed\":false,\"internalType\":\"address[]\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AccessControlBadConfirmation\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"AccessControlUnauthorizedAccount\",\"inputs\":[{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"neededRole\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InvalidSwapPath\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ReentrancyGuardReentrantCall\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RescuePaymentTokenForbidden\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"SafeERC20FailedOperation\",\"inputs\":[{\"name\":\"token\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"ZeroAddress\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ZeroAmount\",\"inputs\":[]}]",
 }
 
 // BuybackBurnerABI is the input ABI used to generate the binding from.
@@ -178,37 +178,6 @@ func (_BuybackBurner *BuybackBurnerTransactorRaw) Transfer(opts *bind.TransactOp
 // Transact invokes the (paid) contract method with params as input values.
 func (_BuybackBurner *BuybackBurnerTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
 	return _BuybackBurner.Contract.contract.Transact(opts, method, params...)
-}
-
-// BPS is a free data retrieval call binding the contract method 0x249d39e9.
-//
-// Solidity: function BPS() view returns(uint256)
-func (_BuybackBurner *BuybackBurnerCaller) BPS(opts *bind.CallOpts) (*big.Int, error) {
-	var out []interface{}
-	err := _BuybackBurner.contract.Call(opts, &out, "BPS")
-
-	if err != nil {
-		return *new(*big.Int), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
-
-	return out0, err
-
-}
-
-// BPS is a free data retrieval call binding the contract method 0x249d39e9.
-//
-// Solidity: function BPS() view returns(uint256)
-func (_BuybackBurner *BuybackBurnerSession) BPS() (*big.Int, error) {
-	return _BuybackBurner.Contract.BPS(&_BuybackBurner.CallOpts)
-}
-
-// BPS is a free data retrieval call binding the contract method 0x249d39e9.
-//
-// Solidity: function BPS() view returns(uint256)
-func (_BuybackBurner *BuybackBurnerCallerSession) BPS() (*big.Int, error) {
-	return _BuybackBurner.Contract.BPS(&_BuybackBurner.CallOpts)
 }
 
 // DEFAULTADMINROLE is a free data retrieval call binding the contract method 0xa217fddf.
@@ -366,12 +335,12 @@ func (_BuybackBurner *BuybackBurnerCallerSession) HasRole(role [32]byte, account
 	return _BuybackBurner.Contract.HasRole(&_BuybackBurner.CallOpts, role, account)
 }
 
-// MinOutBps is a free data retrieval call binding the contract method 0xa4d9f536.
+// MinTituOut is a free data retrieval call binding the contract method 0xff354d50.
 //
-// Solidity: function minOutBps() view returns(uint256)
-func (_BuybackBurner *BuybackBurnerCaller) MinOutBps(opts *bind.CallOpts) (*big.Int, error) {
+// Solidity: function minTituOut() view returns(uint256)
+func (_BuybackBurner *BuybackBurnerCaller) MinTituOut(opts *bind.CallOpts) (*big.Int, error) {
 	var out []interface{}
-	err := _BuybackBurner.contract.Call(opts, &out, "minOutBps")
+	err := _BuybackBurner.contract.Call(opts, &out, "minTituOut")
 
 	if err != nil {
 		return *new(*big.Int), err
@@ -383,18 +352,18 @@ func (_BuybackBurner *BuybackBurnerCaller) MinOutBps(opts *bind.CallOpts) (*big.
 
 }
 
-// MinOutBps is a free data retrieval call binding the contract method 0xa4d9f536.
+// MinTituOut is a free data retrieval call binding the contract method 0xff354d50.
 //
-// Solidity: function minOutBps() view returns(uint256)
-func (_BuybackBurner *BuybackBurnerSession) MinOutBps() (*big.Int, error) {
-	return _BuybackBurner.Contract.MinOutBps(&_BuybackBurner.CallOpts)
+// Solidity: function minTituOut() view returns(uint256)
+func (_BuybackBurner *BuybackBurnerSession) MinTituOut() (*big.Int, error) {
+	return _BuybackBurner.Contract.MinTituOut(&_BuybackBurner.CallOpts)
 }
 
-// MinOutBps is a free data retrieval call binding the contract method 0xa4d9f536.
+// MinTituOut is a free data retrieval call binding the contract method 0xff354d50.
 //
-// Solidity: function minOutBps() view returns(uint256)
-func (_BuybackBurner *BuybackBurnerCallerSession) MinOutBps() (*big.Int, error) {
-	return _BuybackBurner.Contract.MinOutBps(&_BuybackBurner.CallOpts)
+// Solidity: function minTituOut() view returns(uint256)
+func (_BuybackBurner *BuybackBurnerCallerSession) MinTituOut() (*big.Int, error) {
+	return _BuybackBurner.Contract.MinTituOut(&_BuybackBurner.CallOpts)
 }
 
 // PaymentToken is a free data retrieval call binding the contract method 0x3013ce29.
@@ -688,25 +657,25 @@ func (_BuybackBurner *BuybackBurnerTransactorSession) RevokeRole(role [32]byte, 
 	return _BuybackBurner.Contract.RevokeRole(&_BuybackBurner.TransactOpts, role, account)
 }
 
-// SetMinOutBps is a paid mutator transaction binding the contract method 0x17fdef55.
+// SetMinTituOut is a paid mutator transaction binding the contract method 0x904b4475.
 //
-// Solidity: function setMinOutBps(uint256 newBps) returns()
-func (_BuybackBurner *BuybackBurnerTransactor) SetMinOutBps(opts *bind.TransactOpts, newBps *big.Int) (*types.Transaction, error) {
-	return _BuybackBurner.contract.Transact(opts, "setMinOutBps", newBps)
+// Solidity: function setMinTituOut(uint256 newMin) returns()
+func (_BuybackBurner *BuybackBurnerTransactor) SetMinTituOut(opts *bind.TransactOpts, newMin *big.Int) (*types.Transaction, error) {
+	return _BuybackBurner.contract.Transact(opts, "setMinTituOut", newMin)
 }
 
-// SetMinOutBps is a paid mutator transaction binding the contract method 0x17fdef55.
+// SetMinTituOut is a paid mutator transaction binding the contract method 0x904b4475.
 //
-// Solidity: function setMinOutBps(uint256 newBps) returns()
-func (_BuybackBurner *BuybackBurnerSession) SetMinOutBps(newBps *big.Int) (*types.Transaction, error) {
-	return _BuybackBurner.Contract.SetMinOutBps(&_BuybackBurner.TransactOpts, newBps)
+// Solidity: function setMinTituOut(uint256 newMin) returns()
+func (_BuybackBurner *BuybackBurnerSession) SetMinTituOut(newMin *big.Int) (*types.Transaction, error) {
+	return _BuybackBurner.Contract.SetMinTituOut(&_BuybackBurner.TransactOpts, newMin)
 }
 
-// SetMinOutBps is a paid mutator transaction binding the contract method 0x17fdef55.
+// SetMinTituOut is a paid mutator transaction binding the contract method 0x904b4475.
 //
-// Solidity: function setMinOutBps(uint256 newBps) returns()
-func (_BuybackBurner *BuybackBurnerTransactorSession) SetMinOutBps(newBps *big.Int) (*types.Transaction, error) {
-	return _BuybackBurner.Contract.SetMinOutBps(&_BuybackBurner.TransactOpts, newBps)
+// Solidity: function setMinTituOut(uint256 newMin) returns()
+func (_BuybackBurner *BuybackBurnerTransactorSession) SetMinTituOut(newMin *big.Int) (*types.Transaction, error) {
+	return _BuybackBurner.Contract.SetMinTituOut(&_BuybackBurner.TransactOpts, newMin)
 }
 
 // SetRouter is a paid mutator transaction binding the contract method 0xc0d78655.
@@ -906,9 +875,9 @@ func (_BuybackBurner *BuybackBurnerFilterer) ParseBuybackAndBurn(log types.Log) 
 	return event, nil
 }
 
-// BuybackBurnerMinOutBpsUpdatedIterator is returned from FilterMinOutBpsUpdated and is used to iterate over the raw logs and unpacked data for MinOutBpsUpdated events raised by the BuybackBurner contract.
-type BuybackBurnerMinOutBpsUpdatedIterator struct {
-	Event *BuybackBurnerMinOutBpsUpdated // Event containing the contract specifics and raw log
+// BuybackBurnerMinTituOutUpdatedIterator is returned from FilterMinTituOutUpdated and is used to iterate over the raw logs and unpacked data for MinTituOutUpdated events raised by the BuybackBurner contract.
+type BuybackBurnerMinTituOutUpdatedIterator struct {
+	Event *BuybackBurnerMinTituOutUpdated // Event containing the contract specifics and raw log
 
 	contract *bind.BoundContract // Generic contract to use for unpacking event data
 	event    string              // Event name to use for unpacking event data
@@ -922,7 +891,7 @@ type BuybackBurnerMinOutBpsUpdatedIterator struct {
 // Next advances the iterator to the subsequent event, returning whether there
 // are any more events found. In case of a retrieval or parsing error, false is
 // returned and Error() can be queried for the exact failure.
-func (it *BuybackBurnerMinOutBpsUpdatedIterator) Next() bool {
+func (it *BuybackBurnerMinTituOutUpdatedIterator) Next() bool {
 	// If the iterator failed, stop iterating
 	if it.fail != nil {
 		return false
@@ -931,7 +900,7 @@ func (it *BuybackBurnerMinOutBpsUpdatedIterator) Next() bool {
 	if it.done {
 		select {
 		case log := <-it.logs:
-			it.Event = new(BuybackBurnerMinOutBpsUpdated)
+			it.Event = new(BuybackBurnerMinTituOutUpdated)
 			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
 				it.fail = err
 				return false
@@ -946,7 +915,7 @@ func (it *BuybackBurnerMinOutBpsUpdatedIterator) Next() bool {
 	// Iterator still in progress, wait for either a data or an error event
 	select {
 	case log := <-it.logs:
-		it.Event = new(BuybackBurnerMinOutBpsUpdated)
+		it.Event = new(BuybackBurnerMinTituOutUpdated)
 		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
 			it.fail = err
 			return false
@@ -962,42 +931,42 @@ func (it *BuybackBurnerMinOutBpsUpdatedIterator) Next() bool {
 }
 
 // Error returns any retrieval or parsing error occurred during filtering.
-func (it *BuybackBurnerMinOutBpsUpdatedIterator) Error() error {
+func (it *BuybackBurnerMinTituOutUpdatedIterator) Error() error {
 	return it.fail
 }
 
 // Close terminates the iteration process, releasing any pending underlying
 // resources.
-func (it *BuybackBurnerMinOutBpsUpdatedIterator) Close() error {
+func (it *BuybackBurnerMinTituOutUpdatedIterator) Close() error {
 	it.sub.Unsubscribe()
 	return nil
 }
 
-// BuybackBurnerMinOutBpsUpdated represents a MinOutBpsUpdated event raised by the BuybackBurner contract.
-type BuybackBurnerMinOutBpsUpdated struct {
-	OldBps *big.Int
-	NewBps *big.Int
+// BuybackBurnerMinTituOutUpdated represents a MinTituOutUpdated event raised by the BuybackBurner contract.
+type BuybackBurnerMinTituOutUpdated struct {
+	OldMin *big.Int
+	NewMin *big.Int
 	Raw    types.Log // Blockchain specific contextual infos
 }
 
-// FilterMinOutBpsUpdated is a free log retrieval operation binding the contract event 0xbbccd34c6edc4e3f130223b359b3b1012f8c0a25ebf5aa54400f87321df43c32.
+// FilterMinTituOutUpdated is a free log retrieval operation binding the contract event 0x53fd101c8f6ba0f0fb4f44cc48b8e00b504b4f1e56073a9a170509f802488d84.
 //
-// Solidity: event MinOutBpsUpdated(uint256 oldBps, uint256 newBps)
-func (_BuybackBurner *BuybackBurnerFilterer) FilterMinOutBpsUpdated(opts *bind.FilterOpts) (*BuybackBurnerMinOutBpsUpdatedIterator, error) {
+// Solidity: event MinTituOutUpdated(uint256 oldMin, uint256 newMin)
+func (_BuybackBurner *BuybackBurnerFilterer) FilterMinTituOutUpdated(opts *bind.FilterOpts) (*BuybackBurnerMinTituOutUpdatedIterator, error) {
 
-	logs, sub, err := _BuybackBurner.contract.FilterLogs(opts, "MinOutBpsUpdated")
+	logs, sub, err := _BuybackBurner.contract.FilterLogs(opts, "MinTituOutUpdated")
 	if err != nil {
 		return nil, err
 	}
-	return &BuybackBurnerMinOutBpsUpdatedIterator{contract: _BuybackBurner.contract, event: "MinOutBpsUpdated", logs: logs, sub: sub}, nil
+	return &BuybackBurnerMinTituOutUpdatedIterator{contract: _BuybackBurner.contract, event: "MinTituOutUpdated", logs: logs, sub: sub}, nil
 }
 
-// WatchMinOutBpsUpdated is a free log subscription operation binding the contract event 0xbbccd34c6edc4e3f130223b359b3b1012f8c0a25ebf5aa54400f87321df43c32.
+// WatchMinTituOutUpdated is a free log subscription operation binding the contract event 0x53fd101c8f6ba0f0fb4f44cc48b8e00b504b4f1e56073a9a170509f802488d84.
 //
-// Solidity: event MinOutBpsUpdated(uint256 oldBps, uint256 newBps)
-func (_BuybackBurner *BuybackBurnerFilterer) WatchMinOutBpsUpdated(opts *bind.WatchOpts, sink chan<- *BuybackBurnerMinOutBpsUpdated) (event.Subscription, error) {
+// Solidity: event MinTituOutUpdated(uint256 oldMin, uint256 newMin)
+func (_BuybackBurner *BuybackBurnerFilterer) WatchMinTituOutUpdated(opts *bind.WatchOpts, sink chan<- *BuybackBurnerMinTituOutUpdated) (event.Subscription, error) {
 
-	logs, sub, err := _BuybackBurner.contract.WatchLogs(opts, "MinOutBpsUpdated")
+	logs, sub, err := _BuybackBurner.contract.WatchLogs(opts, "MinTituOutUpdated")
 	if err != nil {
 		return nil, err
 	}
@@ -1007,8 +976,8 @@ func (_BuybackBurner *BuybackBurnerFilterer) WatchMinOutBpsUpdated(opts *bind.Wa
 			select {
 			case log := <-logs:
 				// New log arrived, parse the event and forward to the user
-				event := new(BuybackBurnerMinOutBpsUpdated)
-				if err := _BuybackBurner.contract.UnpackLog(event, "MinOutBpsUpdated", log); err != nil {
+				event := new(BuybackBurnerMinTituOutUpdated)
+				if err := _BuybackBurner.contract.UnpackLog(event, "MinTituOutUpdated", log); err != nil {
 					return err
 				}
 				event.Raw = log
@@ -1029,12 +998,12 @@ func (_BuybackBurner *BuybackBurnerFilterer) WatchMinOutBpsUpdated(opts *bind.Wa
 	}), nil
 }
 
-// ParseMinOutBpsUpdated is a log parse operation binding the contract event 0xbbccd34c6edc4e3f130223b359b3b1012f8c0a25ebf5aa54400f87321df43c32.
+// ParseMinTituOutUpdated is a log parse operation binding the contract event 0x53fd101c8f6ba0f0fb4f44cc48b8e00b504b4f1e56073a9a170509f802488d84.
 //
-// Solidity: event MinOutBpsUpdated(uint256 oldBps, uint256 newBps)
-func (_BuybackBurner *BuybackBurnerFilterer) ParseMinOutBpsUpdated(log types.Log) (*BuybackBurnerMinOutBpsUpdated, error) {
-	event := new(BuybackBurnerMinOutBpsUpdated)
-	if err := _BuybackBurner.contract.UnpackLog(event, "MinOutBpsUpdated", log); err != nil {
+// Solidity: event MinTituOutUpdated(uint256 oldMin, uint256 newMin)
+func (_BuybackBurner *BuybackBurnerFilterer) ParseMinTituOutUpdated(log types.Log) (*BuybackBurnerMinTituOutUpdated, error) {
+	event := new(BuybackBurnerMinTituOutUpdated)
+	if err := _BuybackBurner.contract.UnpackLog(event, "MinTituOutUpdated", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log
