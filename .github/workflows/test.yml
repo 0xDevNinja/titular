@@ -108,3 +108,32 @@ jobs:
         working-directory: contracts/evm
       - run: forge test -vvv
         working-directory: contracts/evm
+
+  # Stale-bindings gate. Re-runs the abigen script and fails if generated Go
+  # bindings drift from the contract artifacts in this commit. Catches PRs
+  # that change a Solidity ABI without regenerating internal/abi/*.
+  abigen-check:
+    name: abigen check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: regenerate bindings
+        working-directory: services/indexer-go
+        run: ./scripts/abigen.sh
+      - name: fail on diff
+        run: |
+          if ! git diff --exit-code -- services/indexer-go/internal/abi/; then
+            echo "::error::Go bindings under services/indexer-go/internal/abi/ are stale."
+            echo "::error::Run services/indexer-go/scripts/abigen.sh and commit the result."
+            exit 1
+          fi

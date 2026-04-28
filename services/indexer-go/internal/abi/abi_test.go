@@ -79,6 +79,46 @@ func TestBondingCurveABIParse(t *testing.T) {
 	}
 }
 
+// TestACPEventSurface guards the indexer's M3 event subscriptions: regenerated
+// bindings that drop one of these names would fail here before reaching CI.
+func TestACPEventSurface(t *testing.T) {
+	cases := []struct {
+		name   string
+		meta   *bind.MetaData
+		events []string
+	}{
+		{"AgentRegistry", bindings.AgentRegistryMetaData, []string{
+			"AgentRegistered", "MetadataUpdated", "CapabilitiesUpdated",
+			"ActiveStatusChanged", "ScorePosted",
+		}},
+		{"JobFactory", bindings.JobFactoryMetaData, []string{
+			"JobCreated", "ImplementationUpdated", "DefaultArbiterUpdated",
+		}},
+		{"Escrow", bindings.EscrowMetaData, []string{
+			"Funded", "Released", "Refunded",
+		}},
+		{"HookRegistry", bindings.HookRegistryMetaData, []string{
+			"HookRegistered", "HookDeregistered",
+		}},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			parsed, err := tc.meta.GetAbi()
+			if err != nil {
+				t.Fatalf("GetAbi: %v", err)
+			}
+			for _, ev := range tc.events {
+				if _, ok := parsed.Events[ev]; !ok {
+					t.Errorf("%s: missing event %q", tc.name, ev)
+				}
+			}
+		})
+	}
+}
+
 // TestAllBindingsCompile instantiates every MetaData and parses its ABI to
 // catch any future regeneration that produces invalid JSON.
 func TestAllBindingsCompile(t *testing.T) {
@@ -104,6 +144,19 @@ func TestAllBindingsCompile(t *testing.T) {
 		{"Treasury", bindings.TreasuryMetaData},
 		{"VeTITU", bindings.VeTITUMetaData},
 		{"VestingVault", bindings.VestingVaultMetaData},
+
+		// M3 — ACP v2.
+		{"AgentRegistry", bindings.AgentRegistryMetaData},
+		{"BuybackBurner", bindings.BuybackBurnerMetaData},
+		{"Escrow", bindings.EscrowMetaData},
+		{"FeeSplitter", bindings.FeeSplitterMetaData},
+		{"FundTransferHook", bindings.FundTransferHookMetaData},
+		{"HookRegistry", bindings.HookRegistryMetaData},
+		{"Job", bindings.JobMetaData},
+		{"JobFactory", bindings.JobFactoryMetaData},
+		{"MilestoneHook", bindings.MilestoneHookMetaData},
+		{"RoyaltyHook", bindings.RoyaltyHookMetaData},
+		{"SubscriptionHook", bindings.SubscriptionHookMetaData},
 	}
 
 	for _, tc := range table {
