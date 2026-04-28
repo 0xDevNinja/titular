@@ -5,10 +5,14 @@
 //
 //	NNNN_<slug>.{up,down}.sql
 //
-// where NNNN is a zero-padded sequence number. Each file MUST contain its
-// own BEGIN/COMMIT — the loader does not wrap statements in a transaction
-// because some migrations (e.g. CREATE INDEX CONCURRENTLY in the future)
-// cannot run inside one.
+// where NNNN is a zero-padded sequence number.
+//
+// Transactions: the migration runner (golang-migrate's pgx/lib/pq drivers)
+// wraps each file in its own transaction. Files MUST NOT contain explicit
+// BEGIN/COMMIT — nested BEGIN warns and an in-file COMMIT closes the
+// wrapper early. If a future migration genuinely needs to run outside a
+// transaction (e.g. CREATE INDEX CONCURRENTLY), use the
+// `-- migrate:no-transaction` directive on the first line of that file.
 package db
 
 import (

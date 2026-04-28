@@ -135,9 +135,13 @@ func TestSchemaTablesListMatchesEmbedded(t *testing.T) {
 	}
 }
 
-// TestMigrationFilesAreTransactional ensures every file wraps its body in
-// BEGIN/COMMIT so a failed apply does not leave half-applied state.
-func TestMigrationFilesAreTransactional(t *testing.T) {
+// TestMigrationFilesHaveNoExplicitTransaction guards against a regression
+// where someone re-adds BEGIN/COMMIT to a migration file. The migration
+// runner wraps each file in its own transaction; an in-file BEGIN would
+// nest (warn) and an in-file COMMIT would close the wrapper early. Files
+// that genuinely need to run outside a tx use the `-- migrate:no-transaction`
+// directive instead.
+func TestMigrationFilesHaveNoExplicitTransaction(t *testing.T) {
 	t.Parallel()
 
 	for _, dir := range []Direction{Up, Down} {
@@ -146,14 +150,36 @@ func TestMigrationFilesAreTransactional(t *testing.T) {
 			t.Fatalf("LoadMigrations(%d): %v", dir, err)
 		}
 		for _, m := range ms {
-			if !strings.Contains(m.SQL, "BEGIN;") {
-				t.Errorf("%s missing BEGIN;", m.Filename())
-			}
-			if !strings.Contains(m.SQL, "COMMIT;") {
-				t.Errorf("%s missing COMMIT;", m.Filename())
+			// Strip line comments before scanning so the directive
+			// itself and prose like "BEGIN/COMMIT" in commentary do
+			// not trip the check.
+			body := stripSQLLineComments(m.SQL)
+			for _, kw := range []string{"BEGIN;", "COMMIT;"} {
+				if strings.Contains(body, kw) {
+					t.Errorf("%s contains %q outside a comment "+
+						"(migration runner wraps the file already)",
+						m.Filename(), kw)
+				}
 			}
 		}
 	}
+}
+
+// stripSQLLineComments removes `-- ...` line comments from a SQL string.
+// It is intentionally minimal: it does not understand string literals or
+// dollar-quoted bodies because the migration files do not embed `--`
+// inside either, and we only use the result for substring screening.
+func stripSQLLineComments(sql string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(sql, "\n") {
+		if i := strings.Index(line, "--"); i >= 0 {
+			b.WriteString(line[:i])
+		} else {
+			b.WriteString(line)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // TestMigrationStringer confirms the human-readable form is stable, since

@@ -17,8 +17,14 @@
 --   - All uint256 amounts stored as numeric(78,0) — wide enough for 2**256-1.
 --   - All timestamps are timestamptz; `created_at` defaults to now().
 --   - Updates bump `updated_at` via trigger (see set_updated_at).
-
-BEGIN;
+--
+-- Transactions:
+--   The migration runner (golang-migrate's pgx/lib/pq drivers) wraps each
+--   file in its own transaction. Do NOT add an explicit BEGIN/COMMIT here —
+--   nested BEGIN warns and an in-file COMMIT closes the wrapper early. If a
+--   future migration needs to run outside a transaction (e.g. CREATE INDEX
+--   CONCURRENTLY), use the `-- migrate:no-transaction` directive on the
+--   first line of that file.
 
 -- ---------------------------------------------------------------------------
 -- Helper: bump updated_at on every row update.
@@ -173,6 +179,8 @@ CREATE UNIQUE INDEX trades_log_uidx ON trades (tx_hash, log_index);
 CREATE INDEX trades_curve_block_idx ON trades (curve, block_number DESC);
 CREATE INDEX trades_trader_block_idx ON trades (trader, block_number DESC);
 CREATE INDEX trades_agent_token_pk_idx ON trades (agent_token_pk) WHERE agent_token_pk IS NOT NULL;
+-- Time-ordered scan across all trades (e.g. global feed / latest-N queries).
+CREATE INDEX trades_block_number_idx ON trades (block_number DESC);
 
 -- ---------------------------------------------------------------------------
 -- jobs — ACP job lifecycle.
@@ -219,6 +227,12 @@ CREATE TABLE jobs (
 );
 
 CREATE UNIQUE INDEX jobs_on_chain_id_uidx ON jobs (on_chain_id);
+-- Each on-chain JobFactory.JobCreated emits a unique minimal-proxy clone, so
+-- when present the clone address must be globally unique. Partial-unique
+-- (skip NULLs) so legacy rows or jobs with no clone do not collide.
+CREATE UNIQUE INDEX jobs_clone_address_uidx
+    ON jobs (clone_address)
+    WHERE clone_address IS NOT NULL;
 CREATE INDEX jobs_agent_pk_idx ON jobs (agent_pk) WHERE agent_pk IS NOT NULL;
 CREATE INDEX jobs_agent_id_idx ON jobs (agent_id) WHERE agent_id IS NOT NULL;
 CREATE INDEX jobs_principal_idx ON jobs (principal);
@@ -292,6 +306,9 @@ CREATE TABLE memos (
     created_at    timestamptz  NOT NULL DEFAULT now(),
     CONSTRAINT memos_content_hash_len CHECK (octet_length(content_hash) = 32),
     CONSTRAINT memos_author_len       CHECK (author IS NULL OR octet_length(author) = 20),
+    -- ECDSA signatures are 64 bytes (compact / EIP-2098) or 65 bytes
+    -- (r || s || v). Reject anything else so malformed rows fail fast.
+    CONSTRAINT memos_signature_len    CHECK (signature IS NULL OR octet_length(signature) IN (64, 65)),
     -- Either a uri or an inline body must be present. Storing both is allowed.
     CONSTRAINT memos_has_payload      CHECK (uri IS NOT NULL OR body IS NOT NULL)
 );
@@ -299,5 +316,3 @@ CREATE TABLE memos (
 CREATE UNIQUE INDEX memos_content_hash_uidx ON memos (content_hash);
 CREATE INDEX memos_job_pk_idx ON memos (job_pk) WHERE job_pk IS NOT NULL;
 CREATE INDEX memos_on_chain_id_idx ON memos (on_chain_id) WHERE on_chain_id IS NOT NULL;
-
-COMMIT;
