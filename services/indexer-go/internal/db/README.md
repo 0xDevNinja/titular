@@ -67,8 +67,11 @@ DATABASE_URL=postgres://titular:titular@localhost:5432/titular?sslmode=disable \
     /tmp/migrate up        # apply every pending migration
 /tmp/migrate version       # → "version=1 dirty=false"
 /tmp/migrate steps -1      # revert one
-/tmp/migrate down          # revert everything
-/tmp/migrate force 0       # recovery: clear dirty flag without running SQL
+
+# Destructive commands refuse to run without an explicit override. Set
+# MIGRATE_ALLOW_DESTRUCTIVE=1 to opt in (CI must NOT export this).
+MIGRATE_ALLOW_DESTRUCTIVE=1 /tmp/migrate down       # revert everything
+MIGRATE_ALLOW_DESTRUCTIVE=1 /tmp/migrate force 0    # recovery
 ```
 
 Both the libpq URI form (`postgres://...`) and the migrate-specific

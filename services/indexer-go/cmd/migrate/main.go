@@ -12,12 +12,17 @@
 // (postgres://user:pw@host:port/db) and the migrate-specific pgx5:// form
 // are accepted.
 //
+// Destructive commands (`down`, `force`) refuse to run unless
+// $MIGRATE_ALLOW_DESTRUCTIVE=1 is set. This is a foot-gun guard for CI and
+// pasted-into-prod-shell mistakes; recovery flows must opt in explicitly.
+//
 // Exit codes:
 //
 //	0  success (including "no change" results)
 //	1  bad arguments / config
 //	2  migration failure (the database may be left in a dirty state — run
-//	   `migrate version` and consult the runbook before forcing)
+//	   `migrate version` and consult the runbook before forcing), or a
+//	   refused destructive command without MIGRATE_ALLOW_DESTRUCTIVE=1
 package main
 
 import (
@@ -42,8 +47,13 @@ Commands:
   force <v>       set schema_migrations to (v, dirty=false) without running SQL
 
 Environment:
-  DATABASE_URL    Postgres DSN (postgres://… or pgx5://…). Required.
+  DATABASE_URL                 Postgres DSN (postgres://… or pgx5://…). Required.
+  MIGRATE_ALLOW_DESTRUCTIVE    Must be "1" to run "down" or "force". Unset by default.
 `
+
+// destructiveEnv is the env var required to run "down" or "force". Kept as
+// a const so the test and the error message stay in lockstep.
+const destructiveEnv = "MIGRATE_ALLOW_DESTRUCTIVE"
 
 func main() {
 	// Use a custom flagset so -h prints our combined usage rather than the
@@ -67,7 +77,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	code := run(args, dsn, os.Stdout, os.Stderr)
+	code := run(args, dsn, os.Getenv, os.Stdout, os.Stderr)
 	os.Exit(code)
 }
 
@@ -125,10 +135,29 @@ func parseArgs(args []string, stdout, stderr *os.File) (a action, code int, done
 
 // run is split out so tests can drive the dispatcher without execing a
 // subprocess. It returns the exit code instead of calling os.Exit.
-func run(args []string, dsn string, stdout, stderr *os.File) int {
+//
+// getenv is injected (rather than calling os.Getenv directly) so the test
+// suite can assert the destructive-command gate without polluting process
+// state for parallel siblings.
+func run(args []string, dsn string, getenv func(string) string, stdout, stderr *os.File) int {
 	a, code, done := parseArgs(args, stdout, stderr)
 	if done {
 		return code
+	}
+
+	// Destructive-command guard. "down" wipes every applied migration;
+	// "force" papers over a dirty version in-place. Both are recovery
+	// tools, not a normal CI step — refuse unless the operator opts in.
+	// Exit code 2 (not 1) so a CI runner can distinguish "you misused
+	// the tool" from "you tried to do something dangerous without the
+	// safety toggle".
+	if a.cmd == "down" || a.cmd == "force" {
+		if getenv(destructiveEnv) != "1" {
+			fmt.Fprintf(stderr,
+				"migrate: destructive command %q refused — set %s=1 to confirm\n",
+				a.cmd, destructiveEnv)
+			return 2
+		}
 	}
 
 	mig, err := db.New(dsn)
