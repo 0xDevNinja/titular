@@ -11,8 +11,13 @@ import (
 	"strings"
 
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/0xDevNinja/titular/services/indexer-go/internal/decoder"
+	"github.com/0xDevNinja/titular/services/indexer-go/internal/observability"
 )
 
 // Publisher fans decoded EVM events out to a NATS JetStream context. It
@@ -50,6 +55,13 @@ type JetStreamContext interface {
 	// flag — Publisher does not currently inspect either, but the
 	// interface keeps the door open for metrics later.
 	Publish(subject string, data []byte, opts ...nats.PubOpt) (*nats.PubAck, error)
+
+	// PublishMsg variant carrying a full [nats.Msg] so the publisher
+	// can stamp W3C TraceContext headers (and any future correlation
+	// metadata) onto the wire message. Both methods accept the same
+	// PubOpt set; the primary semantic difference is the header
+	// payload being preserved across the boundary.
+	PublishMsg(msg *nats.Msg, opts ...nats.PubOpt) (*nats.PubAck, error)
 }
 
 // Options configures Publisher. Zero value is valid: it uses the package
@@ -129,6 +141,10 @@ type envelope struct {
 // nil for callers that have no per-block deadline; in that case Publish
 // uses the underlying client's default timeout.
 func (p *Publisher) OnEvent(ctx context.Context, event decoder.DecodedEvent) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	subject, ok := SubjectFor(event.Name)
 	if !ok {
 		if p.opts.SkipUnmapped {
@@ -137,8 +153,31 @@ func (p *Publisher) OnEvent(ctx context.Context, event decoder.DecodedEvent) err
 		return fmt.Errorf("%w: %s", ErrUnmappedEvent, event.Name)
 	}
 
+	// Start a producer span around the publish. The span is the parent
+	// of the NATS-side trace once a downstream consumer extracts the
+	// W3C TraceContext we inject into the message header (gateway SSE
+	// multiplexer, GraphQL subscription bus). Span name follows the
+	// OTel messaging conventions: "<destination> publish".
+	tracer := otel.Tracer("titular/indexer/publisher")
+	ctx, span := tracer.Start(ctx, subject+" publish",
+		trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "nats"),
+			attribute.String("messaging.destination.name", subject),
+			attribute.String("messaging.operation", "publish"),
+			// Event name is non-cardinal (one per registered abi event),
+			// so it is safe as a span attribute — the dispatch table
+			// caps the set at decoder.KnownEvents().
+			attribute.String("titular.event.name", event.Name),
+			attribute.Int64("titular.block_number", int64(event.Raw.BlockNumber)),
+		),
+	)
+	defer span.End()
+
 	payload, err := wrapPayload(event.Payload)
 	if err != nil {
+		span.SetStatus(codes.Error, "wrap payload")
+		span.RecordError(err)
 		return fmt.Errorf("publisher: wrap %s: %w", event.Name, err)
 	}
 
@@ -150,15 +189,23 @@ func (p *Publisher) OnEvent(ctx context.Context, event decoder.DecodedEvent) err
 		Payload:     payload,
 	})
 	if err != nil {
+		span.SetStatus(codes.Error, "encode envelope")
+		span.RecordError(err)
 		return fmt.Errorf("publisher: encode %s: %w", event.Name, err)
 	}
 
 	msgID := DedupID(event.Raw.TxHash.Hex(), event.Raw.Index)
-	pubOpts := []nats.PubOpt{nats.MsgId(msgID)}
-	if ctx != nil {
-		pubOpts = append(pubOpts, nats.Context(ctx))
-	}
-	if _, err := p.js.Publish(subject, body, pubOpts...); err != nil {
+	msg := &nats.Msg{Subject: subject, Data: body}
+	// Inject W3C TraceContext headers so a downstream consumer of this
+	// JetStream subject can resume the trace as a child of THIS span.
+	// Safe when OTel is disabled — the propagator is the default no-op
+	// in that case and writes nothing.
+	observability.InjectNATSHeaders(ctx, msg)
+
+	pubOpts := []nats.PubOpt{nats.MsgId(msgID), nats.Context(ctx)}
+	if _, err := p.js.PublishMsg(msg, pubOpts...); err != nil {
+		span.SetStatus(codes.Error, "publish")
+		span.RecordError(err)
 		return fmt.Errorf("publisher: publish %s to %s: %w", event.Name, subject, err)
 	}
 	return nil

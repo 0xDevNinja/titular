@@ -26,12 +26,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"strconv"
 
 	"github.com/0xDevNinja/titular/services/indexer-go/internal/db"
+	"github.com/0xDevNinja/titular/services/indexer-go/internal/observability"
 )
 
 const usage = `migrate — apply or revert indexer-go Postgres migrations
@@ -76,6 +78,30 @@ func main() {
 		fmt.Fprintln(os.Stderr, "migrate: DATABASE_URL is not set")
 		os.Exit(1)
 	}
+
+	// OTel: wire up tracing if the operator has set
+	// OTEL_EXPORTER_OTLP_ENDPOINT, otherwise this is a no-op.
+	// Migrations are short-lived, but stitching their spans into a
+	// deploy trace lets operators see the boot DB sequence next to
+	// the application startup.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	otelShutdown, oerr := observability.Init(ctx, observability.Config{
+		ServiceName: "indexer-migrate",
+	})
+	if oerr != nil {
+		// Refuse rather than swallow — a misconfigured collector that
+		// returns an error here usually means an operator typo'd the
+		// endpoint, and we'd rather surface that at boot than emit
+		// nothing for the next hour.
+		fmt.Fprintf(os.Stderr, "migrate: observability init: %v\n", oerr)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := otelShutdown(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "migrate: observability shutdown: %v\n", err)
+		}
+	}()
 
 	code := run(args, dsn, os.Getenv, os.Stdout, os.Stderr)
 	os.Exit(code)

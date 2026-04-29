@@ -158,6 +158,7 @@ import (
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/graph"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/observability"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/openapi"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/router"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/sse"
@@ -174,6 +175,18 @@ func main() {
 
 	addr := envOr("GATEWAY_ADDR", ":8080")
 	service := envOr("GATEWAY_SERVICE", "gateway")
+
+	// OTel must come up BEFORE any subsystem that may emit a span
+	// (the pgx tracer is wired the moment the pool is built; the gin
+	// middleware reads otel.GetTracerProvider() per-request). Init is
+	// a no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset, so a gateway
+	// without observability still starts cleanly.
+	otelShutdown, err := observability.Init(context.Background(), observability.Config{
+		ServiceName: service,
+	})
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialise observability")
+	}
 
 	agentHandlers, err := handlers.NewAgentHandlers()
 	if err != nil {
@@ -306,6 +319,16 @@ func main() {
 	// teardown.
 	if natsClose != nil {
 		natsClose()
+	}
+
+	// OTel shutdown last so any final spans / metrics emitted by the
+	// teardown above are flushed to the collector. The 10s internal
+	// cap inside the shutdown closure means a wedged collector cannot
+	// pin the process indefinitely on SIGTERM.
+	if otelShutdown != nil {
+		if err := otelShutdown(context.Background()); err != nil {
+			log.Warn().Err(err).Msg("otel shutdown")
+		}
 	}
 }
 

@@ -199,6 +199,16 @@ func NewWithConfigLifecycle(
 
 	engine.Use(middleware.RequestID())
 	engine.Use(middleware.Recovery(logger))
+	// OTel inbound span. Mounted AFTER RequestID/Recovery so the request_id
+	// is already in scope (TraceCorrelation copies it onto the span) and
+	// any panic-derived 500 is still observed by the span's
+	// defer-rendered status. Mounted BEFORE Log so the structured log
+	// line has the trace id available to record (we do not currently
+	// emit it, but the field is reserved). When OTel is disabled (no
+	// exporter endpoint) the global TracerProvider is a no-op and
+	// otelgin's bookkeeping is allocation-free.
+	engine.Use(middleware.OTelMiddleware(cfg.Service))
+	engine.Use(middleware.TraceCorrelation())
 	engine.Use(middleware.Log(middleware.LogConfig{
 		Logger:    logger,
 		Service:   cfg.Service,
