@@ -185,9 +185,15 @@
         "type": "object"
       },
       "store.AgentKind": {
-        "enum": ["launchpad", "acp"],
+        "enum": [
+          "launchpad",
+          "acp"
+        ],
         "type": "string",
-        "x-enum-varnames": ["AgentKindLaunchpad", "AgentKindACP"]
+        "x-enum-varnames": [
+          "AgentKindLaunchpad",
+          "AgentKindACP"
+        ]
       },
       "store.Job": {
         "properties": {
@@ -417,7 +423,10 @@
             "in": "query",
             "name": "kind",
             "schema": {
-              "enum": ["launchpad", "acp"],
+              "enum": [
+                "launchpad",
+                "acp"
+              ],
               "type": "string"
             }
           }
@@ -455,7 +464,9 @@
           }
         },
         "summary": "List agents",
-        "tags": ["agents"]
+        "tags": [
+          "agents"
+        ]
       }
     },
     "/api/v1/agents/{id}": {
@@ -505,7 +516,9 @@
           }
         },
         "summary": "Get agent",
-        "tags": ["agents"]
+        "tags": [
+          "agents"
+        ]
       }
     },
     "/api/v1/jobs": {
@@ -582,7 +595,9 @@
           }
         },
         "summary": "List ACP jobs",
-        "tags": ["jobs"]
+        "tags": [
+          "jobs"
+        ]
       }
     },
     "/api/v1/stats": {
@@ -611,7 +626,9 @@
           }
         },
         "summary": "Aggregate protocol stats",
-        "tags": ["stats"]
+        "tags": [
+          "stats"
+        ]
       }
     },
     "/api/v1/trades": {
@@ -696,7 +713,9 @@
           }
         },
         "summary": "List trades",
-        "tags": ["trades"]
+        "tags": [
+          "trades"
+        ]
       }
     },
     "/auth/logout": {
@@ -723,7 +742,9 @@
           }
         ],
         "summary": "Revoke session",
-        "tags": ["auth"]
+        "tags": [
+          "auth"
+        ]
       }
     },
     "/auth/siwe/nonce": {
@@ -752,7 +773,9 @@
           }
         },
         "summary": "Issue SIWE nonce",
-        "tags": ["auth"]
+        "tags": [
+          "auth"
+        ]
       }
     },
     "/auth/siwe/verify": {
@@ -813,7 +836,9 @@
           }
         },
         "summary": "Verify SIWE message and mint session",
-        "tags": ["auth"]
+        "tags": [
+          "auth"
+        ]
       }
     },
     "/auth/siws/nonce": {
@@ -842,7 +867,9 @@
           }
         },
         "summary": "Issue SIWS nonce",
-        "tags": ["auth"]
+        "tags": [
+          "auth"
+        ]
       }
     },
     "/auth/siws/verify": {
@@ -903,7 +930,9 @@
           }
         },
         "summary": "Verify SIWS message and mint session",
-        "tags": ["auth"]
+        "tags": [
+          "auth"
+        ]
       }
     },
     "/healthz": {
@@ -922,7 +951,9 @@
           }
         },
         "summary": "Liveness probe",
-        "tags": ["health"]
+        "tags": [
+          "health"
+        ]
       }
     }
   },
