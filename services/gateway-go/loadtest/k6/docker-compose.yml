@@ -1,0 +1,173 @@
+# docker-compose.yml — local + CI driver for the gateway-go k6 load
+# test.
+#
+# What it brings up:
+#
+#   * postgres   — Postgres 16 with the indexer's migration set applied
+#                  and the seed.sql fixtures loaded.
+#   * migrate    — one-shot service that runs `services/indexer-go/cmd/migrate up`
+#                  against postgres on startup, then exits 0. Subsequent
+#                  services depend on it via `service_completed_successfully`
+#                  so they only start once the schema is in place.
+#   * seed       — one-shot service that pipes seed.sql into psql.
+#                  Depends on `migrate` for completion order.
+#   * gateway    — services/gateway-go built from the repo root, wired to
+#                  the postgres service via GATEWAY_DATABASE_URL.
+#                  Listens on :8080 inside the docker network.
+#   * k6         — the test driver. Mounted read-only with the script
+#                  files, runs script.js against the gateway. Inherits
+#                  K6_TARGET_RPS / K6_DURATION / K6_VUS / K6_AGENT_MAX_ID
+#                  from the host environment so CI can override them
+#                  without editing this file.
+#
+# Why a separate "migrate" + "seed" job rather than the default
+# postgres `docker-entrypoint-initdb.d` mechanism: the indexer
+# migrations are Go-driven (golang-migrate) and need the embedded
+# migration set, which lives in the indexer binary's filesystem. We
+# can't drop them as `*.sql` into initdb.d without losing the
+# migration version-tracking, and the migrate binary is the
+# authoritative consumer of those files anyway.
+#
+# Network: services share the default compose network and reach each
+# other by service name (postgres, gateway, …). No host port mapping
+# is required for the CI variant — only the host-facing `make` target
+# below maps gateway:8080 → 8080 for ad-hoc local runs.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: titular
+      POSTGRES_PASSWORD: titular
+      POSTGRES_DB: titular
+      # Tune Postgres for a load test rather than for durability; this
+      # is a throwaway container. fsync off + synchronous_commit off
+      # would change latency by a few ms, which is well inside the
+      # 200ms p99 budget — leaving them at defaults so the SLO check
+      # measures realistic conditions.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U titular -d titular"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    # No published port: nothing outside the compose network needs
+    # direct DB access. Restrict the surface area to the migrate / seed
+    # / gateway services that need it.
+
+  migrate:
+    image: golang:1.25-alpine
+    working_dir: /workspace/services/indexer-go
+    environment:
+      DATABASE_URL: postgres://titular:titular@postgres:5432/titular?sslmode=disable
+    volumes:
+      - ../../../..:/workspace:ro
+      - go-mod-cache:/go/pkg/mod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["go", "run", "./cmd/migrate", "up"]
+    restart: "no"
+
+  seed:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: titular
+    volumes:
+      - ./seed.sql:/seed.sql:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command:
+      - "psql"
+      - "-h"
+      - "postgres"
+      - "-U"
+      - "titular"
+      - "-d"
+      - "titular"
+      - "-v"
+      - "ON_ERROR_STOP=1"
+      - "-f"
+      - "/seed.sql"
+    restart: "no"
+
+  gateway:
+    # We deliberately use `go run ./cmd/gateway` against the
+    # mounted source tree rather than building from
+    # services/gateway-go/Dockerfile. The committed Dockerfile
+    # builds the placeholder root main.go (which prints
+    # "ok: gateway-go" and exits) — wiring the real binary into
+    # that image is part of the M4 deployment task, not the
+    # load-test scope. Running ./cmd/gateway directly keeps the
+    # load test honest against the same code path the unit tests
+    # exercise without coupling to a not-yet-finalised image.
+    image: golang:1.25-alpine
+    working_dir: /workspace/services/gateway-go
+    environment:
+      GATEWAY_ADDR: ":8080"
+      GATEWAY_SERVICE: "gateway-loadtest"
+      GATEWAY_DATABASE_URL: "postgres://titular:titular@postgres:5432/titular?sslmode=disable"
+      # Disable rate limiting in the load-test environment — the
+      # middleware itself is not the SUT and a per-IP token bucket
+      # would otherwise throttle k6 (which presents a single source
+      # IP) below the SLO target.
+      GATEWAY_RATE_LIMIT_RPS: "0"
+      GATEWAY_RATE_LIMIT_BURST: "0"
+    volumes:
+      - ../../../..:/workspace:ro
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    command: ["go", "run", "./cmd/gateway"]
+    healthcheck:
+      # `wget` ships in the alpine base; busybox's variant supports
+      # -qO- for the healthcheck.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      # Generous start period: `go run` compiles the binary on the
+      # first start, which can take 30-60s on a cold runner. Don't
+      # let the healthcheck flap the dependent k6 service before
+      # the build finishes.
+      start_period: 90s
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    # No host port mapping by default. The k6 service reaches the
+    # gateway as `gateway:8080` over the compose network. Local
+    # operators who want to curl the gateway directly can run with
+    # `--service-ports gateway` from the make target.
+
+  k6:
+    image: grafana/k6:0.49.0
+    depends_on:
+      gateway:
+        condition: service_healthy
+    environment:
+      GATEWAY_BASE_URL: "http://gateway:8080"
+      K6_TARGET_RPS: "${K6_TARGET_RPS:-1000}"
+      K6_DURATION: "${K6_DURATION:-60s}"
+      K6_VUS: "${K6_VUS:-200}"
+      K6_AGENT_MAX_ID: "${K6_AGENT_MAX_ID:-100}"
+    volumes:
+      - ./script.js:/scripts/script.js:ro
+      - ./scenarios.js:/scripts/scenarios.js:ro
+    command:
+      - "run"
+      - "--summary-export=/scripts/summary.json"
+      - "/scripts/script.js"
+    # k6 writes the structured summary to stdout AND to summary.json
+    # if --out is set; we keep the run flag minimal so the workflow
+    # job log is the primary artefact reviewers look at.
+
+volumes:
+  # Shared between the migrate and gateway services so the second
+  # `go run` does not re-download the entire module graph.
+  go-mod-cache:
+  # Gateway-only build cache. Sharing with migrate would invite
+  # parallel writes during boot — they target different binaries
+  # but go's build cache is keyed by import path, so giving each
+  # its own path-scoped namespace would just bloat the cache.
+  # Using a separate volume per service is the simpler trade-off.
+  go-build-cache:
