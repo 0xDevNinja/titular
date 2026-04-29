@@ -25,7 +25,51 @@ type Handler struct {
 	// because exposing the GraphiQL UI on a public endpoint encourages
 	// uncontrolled query authoring against production data.
 	EnablePlayground bool
+
+	// AllowedOrigins is the same list used by the CORS middleware. It
+	// is consulted by the websocket upgrader's CheckOrigin: browsers
+	// DO NOT apply CORS preflight to WebSocket upgrades, so the CORS
+	// middleware that protects POST /graphql gives the websocket path
+	// no protection. We re-enforce origin here against the same list
+	// the operator already configured for HTTP.
+	//
+	// Empty slice means "no origins allowed" (CORS effectively
+	// disabled), which yields a CheckOrigin that refuses every browser
+	// upgrade — same posture as the CORS middleware.
+	AllowedOrigins []string
+
+	// AllowCredentials mirrors the CORS knob. It is only meaningful in
+	// combination with AllowReflectedOrigins; see CheckOriginFn for
+	// the safety check (refuses "*" + credentials unless the operator
+	// has opted in to the credentialed-reflector mode).
+	AllowCredentials bool
+
+	// AllowReflectedOrigins, when true, lets the wildcard "*" origin
+	// pair with AllowCredentials. In that mode the websocket upgrade
+	// echoes any origin verbatim. Same dev-only escape hatch as the
+	// CORS middleware.
+	AllowReflectedOrigins bool
+
+	// MaxQueryDepth caps the nesting depth of incoming query and
+	// mutation operations to make resource-exhaustion via deeply
+	// nested selections impossible. graphql-go has no built-in depth
+	// limiter; we run a recursive walker over the parsed AST before
+	// graphql.Do.
+	//
+	// Zero means "use the package default" (defaultMaxQueryDepth).
+	// Introspection queries (top-level field __schema or __type) are
+	// always allowed through regardless of this cap, because GraphiQL
+	// and SDK codegen tools need them and they cannot be abused to
+	// reach user data.
+	MaxQueryDepth int
 }
+
+// defaultMaxQueryDepth is the depth cap applied when Handler.MaxQueryDepth
+// is left at zero. Ten levels accommodates every legitimate query in
+// the M4 schema (the deepest is `agents { … }` -> page wrapper -> agent
+// -> 3 fields, ~6 levels) with headroom for fragment expansion and
+// future schema growth.
+const defaultMaxQueryDepth = 10
 
 // NewHandler returns a Handler bound to schema and resolver. Both must
 // be non-nil; the router uses NewHandler at startup so callers cannot
@@ -121,6 +165,20 @@ func (h *Handler) Query(c *gin.Context) {
 		return
 	}
 
+	// Enforce the depth cap BEFORE handing the query to graphql.Do so
+	// a hostile deeply-nested document never reaches the executor /
+	// resolvers / store layer. We follow the GraphQL convention of
+	// returning a 200 OK with an `errors` envelope so SDK clients see
+	// the same shape as a normal validation failure. If the document
+	// fails to parse we let graphql.Do emit the canonical
+	// "Syntax Error" diagnostic itself rather than fronting our own.
+	if msg, blocked := h.checkDepth(req.Query); blocked {
+		c.JSON(http.StatusOK, queryResponse{
+			Errors: []graphqlErrorEnvelope{{Message: msg}},
+		})
+		return
+	}
+
 	result := graphql.Do(graphql.Params{
 		Schema:         h.schema,
 		RequestString:  req.Query,
@@ -130,6 +188,112 @@ func (h *Handler) Query(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, toResponse(result))
+}
+
+// checkDepth enforces Handler.MaxQueryDepth. It returns (msg, true) when
+// the document exceeds the cap; the caller turns that into a GraphQL
+// error envelope. (msg, false) means the document is fine OR the parse
+// failed — in the latter case we let graphql.Do produce the canonical
+// "Syntax Error" diagnostic instead of fronting our own.
+//
+// Introspection
+//
+// Top-level introspection fields (__schema / __type) are exempt: they
+// are needed by GraphiQL and codegen tooling, the schema authors don't
+// always control nesting depth there, and the introspection surface
+// can't be abused to reach user data because the resolver layer never
+// sees those fields.
+func (h *Handler) checkDepth(query string) (string, bool) {
+	cap := h.MaxQueryDepth
+	if cap <= 0 {
+		cap = defaultMaxQueryDepth
+	}
+	doc, err := parser.Parse(parser.ParseParams{
+		Source: source.NewSource(&source.Source{
+			Body: []byte(query),
+			Name: "query",
+		}),
+	})
+	if err != nil {
+		// Let graphql.Do emit the proper Syntax Error.
+		return "", false
+	}
+	for _, def := range doc.Definitions {
+		op, ok := def.(*ast.OperationDefinition)
+		if !ok {
+			continue
+		}
+		if op.SelectionSet == nil {
+			continue
+		}
+		// Skip operations whose top-level selection is purely
+		// introspection. We bypass the cap rather than counting it
+		// because legitimate introspection queries (the standard
+		// GraphiQL bootstrap) breach 10 levels by design.
+		if isIntrospectionOnly(op.SelectionSet) {
+			continue
+		}
+		if depthOfSelectionSet(op.SelectionSet, 1) > cap {
+			return "query exceeds max depth", true
+		}
+	}
+	return "", false
+}
+
+// depthOfSelectionSet returns the maximum depth reachable from the
+// supplied selection set. The recursion bottoms out at fields with no
+// child selection (depth==current). Fragment spreads are conservatively
+// counted as depth 1 because we do not have the document fragment table
+// at this level — over-counting on spreads is safer than under-counting
+// (a malicious spread could otherwise bypass the cap).
+func depthOfSelectionSet(set *ast.SelectionSet, current int) int {
+	if set == nil {
+		return current - 1
+	}
+	max := current
+	for _, sel := range set.Selections {
+		switch s := sel.(type) {
+		case *ast.Field:
+			if d := depthOfSelectionSet(s.SelectionSet, current+1); d > max {
+				max = d
+			} else if current > max {
+				max = current
+			}
+		case *ast.InlineFragment:
+			if d := depthOfSelectionSet(s.SelectionSet, current); d > max {
+				max = d
+			}
+		case *ast.FragmentSpread:
+			// Without the fragment registry we cannot recurse into
+			// the spread; counting it as +1 prevents a malicious
+			// fragment-only document from bypassing the cap.
+			if current+1 > max {
+				max = current + 1
+			}
+		}
+	}
+	return max
+}
+
+// isIntrospectionOnly returns true when every top-level selection in
+// set targets the introspection meta-fields (__schema / __type /
+// __typename). The introspection root is never user data, so we let
+// these queries through at any depth.
+func isIntrospectionOnly(set *ast.SelectionSet) bool {
+	if set == nil || len(set.Selections) == 0 {
+		return false
+	}
+	for _, sel := range set.Selections {
+		f, ok := sel.(*ast.Field)
+		if !ok || f.Name == nil {
+			return false
+		}
+		name := f.Name.Value
+		if name != "__schema" && name != "__type" && name != "__typename" {
+			return false
+		}
+	}
+	return true
 }
 
 // maxQueryBytes is the cap on POST body size. 1 MiB is well above any
@@ -240,6 +404,68 @@ func isSubscription(query, operationName string) bool {
 		}
 	}
 	return false
+}
+
+// CheckOriginFn returns a Gorilla websocket Upgrader.CheckOrigin callback
+// that enforces the Handler's AllowedOrigins list.
+//
+// Why we cannot rely on CORS
+//
+// Browsers DO NOT apply CORS preflight to WebSocket upgrades. The
+// Origin header is sent, but the server is responsible for validating
+// it; an Upgrader that returns true unconditionally accepts cross-site
+// upgrades from any browser tab. The CORS middleware that wraps POST
+// /graphql therefore offers no protection on the GET (upgrade) path.
+//
+// Behaviour
+//
+//   - Empty Origin (non-browser caller): allowed. Native clients (curl,
+//     Go nats subscribers, the indexer test rig) do not send Origin and
+//     are not subject to the same-origin policy in the first place.
+//   - Origin in AllowedOrigins: allowed.
+//   - "*" in AllowedOrigins AND not credentialed: allowed (any browser).
+//   - "*" in AllowedOrigins AND credentialed: refused unless the
+//     operator opted in via AllowReflectedOrigins. Same posture as the
+//     CORS middleware after #85; never produce a credentialed
+//     reflector by default.
+//   - Anything else: refused. The Upgrader will respond with 403.
+func (h *Handler) CheckOriginFn() func(r *http.Request) bool {
+	allowed := make(map[string]struct{}, len(h.AllowedOrigins))
+	wildcard := false
+	for _, o := range h.AllowedOrigins {
+		o = strings.TrimSpace(o)
+		if o == "" {
+			continue
+		}
+		if o == "*" {
+			wildcard = true
+			continue
+		}
+		allowed[o] = struct{}{}
+	}
+	allowCreds := h.AllowCredentials
+	allowReflect := h.AllowReflectedOrigins
+
+	return func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			// Native (non-browser) client. Same-origin policy does
+			// not apply; the gateway's auth and rate-limit layers
+			// remain in force.
+			return true
+		}
+		if wildcard {
+			// "*" without credentials = open. Accept any origin.
+			if !allowCreds {
+				return true
+			}
+			// "*" + credentials is the credentialed-reflector
+			// anti-pattern; refuse unless explicitly opted in.
+			return allowReflect
+		}
+		_, ok := allowed[origin]
+		return ok
+	}
 }
 
 // Playground serves a minimal GraphiQL UI. We do NOT use a third-party

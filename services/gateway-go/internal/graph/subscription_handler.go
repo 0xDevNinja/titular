@@ -10,6 +10,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/graphql-go/graphql/language/ast"
+	"github.com/graphql-go/graphql/language/parser"
+	"github.com/graphql-go/graphql/language/source"
 
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/store"
 )
@@ -49,15 +52,13 @@ func (h *Handler) Subscribe(c *gin.Context) {
 		Subprotocols:    []string{"graphql-transport-ws"},
 		ReadBufferSize:  4096,
 		WriteBufferSize: 4096,
-		CheckOrigin: func(_ *http.Request) bool {
-			// Origin enforcement happens in the CORS middleware that
-			// wraps this handler. Returning true here means the
-			// websocket upgrade itself does not double-validate; the
-			// invariant is that a Browser request that fails CORS
-			// never reaches us, so any request that did reach us is
-			// pre-authorised.
-			return true
-		},
+		// SECURITY: Browsers DO NOT apply CORS preflight to WebSocket
+		// upgrades — the CORS middleware on POST /graphql gives this
+		// path no protection. We re-enforce the operator's allowed-
+		// origins list against the Origin header here. Empty origin
+		// (native clients) is permitted. See Handler.CheckOriginFn for
+		// the full policy.
+		CheckOrigin: h.CheckOriginFn(),
 	}
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, http.Header{
@@ -355,65 +356,149 @@ func (s *wsSession) writeError(id, msg string) {
 	s.writeFrame(wsFrame{ID: id, Type: "error", Payload: body})
 }
 
-// parseSubscriptionOp is a minimal extractor for the subscription field
-// name + arguments. We deliberately do not run the full graphql-go
-// executor for subscriptions — that would require a stream-aware
-// runtime which graphql-go does not provide. Instead we parse the
-// query, find the `subscription { field(args) }` shape, and dispatch
-// on the literal field name.
+// parseSubscriptionOp extracts the subscription field name and its
+// effective argument map.
 //
-// This keeps the dependency surface small and matches how the
-// Subscription resolvers are designed (one Run* helper per field).
-// The trade-off is that we do not validate the operation against the
-// schema's subscription type at this level — a typo in the field name
-// surfaces as `unknown subscription field` rather than a typed
-// validation error. That is acceptable for the alpha and is covered
-// by the websocket integration test.
+// Why we use the full parser
+//
+// The earlier hand-rolled extractor walked characters until it hit '('
+// and returned only the field name — inline arguments such as
+// `newTrade(agentToken: "0x..")` were silently dropped. Clients that
+// expected a server-side filter saw an unfiltered firehose, defeating
+// the whole purpose of the agentToken argument.
+//
+// We now share the same parser the POST handler uses (graphql-go's
+// `language/parser`). The walk:
+//
+//  1. Locates the matching `subscription` operation (by operationName,
+//     or the first one for an anonymous request — same rule as
+//     graphql.Do).
+//  2. Picks the first concrete field selection (top-level fragment
+//     spreads on the subscription root are not part of the supported
+//     surface; they would expand at execution time on the POST path
+//     but our websocket path dispatches on the literal field name).
+//  3. Resolves each argument's value: variables passed in the
+//     subscribe payload win when both an inline literal and a
+//     `$var` reference are present; this mirrors graphql.Do's
+//     coercion order so a debugging client cannot get a different
+//     filter than a deployed one.
+//
+// The field name returned is the wire-form name the dispatcher in
+// runSubscription matches against ("newTrade", "jobUpdated", …).
 func parseSubscriptionOp(query, operationName string, vars map[string]any) (string, map[string]any, error) {
-	const subKeyword = "subscription"
-	q := stripWhitespace(query)
-	if !startsWith(q, subKeyword) {
+	doc, err := parser.Parse(parser.ParseParams{
+		Source: source.NewSource(&source.Source{
+			Body: []byte(query),
+			Name: "subscription",
+		}),
+	})
+	if err != nil {
+		return "", nil, errors.New("subscription parse error")
+	}
+
+	op := pickSubscriptionOp(doc, operationName)
+	if op == nil {
 		return "", nil, errors.New("only subscription operations are supported on this transport")
 	}
-	// Find the first `{`, then the field name.
-	body := q[len(subKeyword):]
-	for i := 0; i < len(body); i++ {
-		if body[i] == '{' {
-			body = body[i+1:]
-			break
-		}
-	}
-	// field name is everything up to '(' or '{' or whitespace.
-	end := len(body)
-	for i, c := range body {
-		if c == '(' || c == '{' || c == ' ' || c == '\n' || c == '\t' {
-			end = i
-			break
-		}
-	}
-	field := body[:end]
-	if field == "" {
+	if op.SelectionSet == nil || len(op.SelectionSet.Selections) == 0 {
 		return "", nil, errors.New("subscription field name missing")
 	}
 
-	// Variables are passed verbatim. The schema's resolver path will
-	// trim/lowercase as needed; we only need the field-name dispatch
-	// here. operationName is informational on the websocket transport.
-	_ = operationName
-	return field, vars, nil
+	// We honour exactly one root field on the subscription operation;
+	// graphql-transport-ws semantics (and our own dispatcher) bind a
+	// single channel per subscribe frame, so a multi-field root would
+	// race two streams onto one id.
+	for _, sel := range op.SelectionSet.Selections {
+		f, ok := sel.(*ast.Field)
+		if !ok || f.Name == nil {
+			continue
+		}
+		args, aerr := resolveFieldArgs(f, vars)
+		if aerr != nil {
+			return "", nil, aerr
+		}
+		return f.Name.Value, args, nil
+	}
+	return "", nil, errors.New("subscription field name missing")
 }
 
-// stripWhitespace removes leading whitespace so the simple subscription
-// parser can match the keyword without a regex. We only trim the
-// front; whitespace inside the body is handled by the field-name
-// extractor.
-func stripWhitespace(s string) string {
-	for i, c := range s {
-		if c != ' ' && c != '\n' && c != '\t' && c != '\r' {
-			return s[i:]
+// pickSubscriptionOp walks the document for the named operation. With
+// an empty operationName we return the first subscription operation
+// (mirrors graphql.Do's anonymous-operation rule).
+func pickSubscriptionOp(doc *ast.Document, operationName string) *ast.OperationDefinition {
+	for _, def := range doc.Definitions {
+		op, ok := def.(*ast.OperationDefinition)
+		if !ok {
+			continue
+		}
+		if op.Operation != ast.OperationTypeSubscription {
+			continue
+		}
+		if operationName == "" {
+			return op
+		}
+		if op.Name != nil && op.Name.Value == operationName {
+			return op
 		}
 	}
-	return ""
+	return nil
+}
+
+// resolveFieldArgs returns the argument map for the supplied field. For
+// each argument we first check the variable-values map (so a client
+// that opted into $vars gets the value it passed); if not present we
+// fall back to the inline literal. Both paths produce Go values
+// compatible with the Run* helpers (string, float64, bool, nil).
+func resolveFieldArgs(f *ast.Field, vars map[string]any) (map[string]any, error) {
+	if len(f.Arguments) == 0 {
+		// No args, but variables may still be relevant on a future
+		// schema revision — pass through the empty map for symmetry.
+		return map[string]any{}, nil
+	}
+	out := make(map[string]any, len(f.Arguments))
+	for _, a := range f.Arguments {
+		if a.Name == nil {
+			continue
+		}
+		name := a.Name.Value
+		switch v := a.Value.(type) {
+		case *ast.Variable:
+			if v.Name == nil {
+				continue
+			}
+			// Variable wins over a hypothetical default — same rule
+			// graphql-go uses on the executor path.
+			if val, ok := vars[v.Name.Value]; ok {
+				out[name] = val
+			}
+		default:
+			out[name] = literalValue(a.Value)
+		}
+	}
+	return out, nil
+}
+
+// literalValue converts a parsed AST value into the matching Go type.
+// We only handle the value kinds the M4 subscription schema accepts —
+// everything else (lists, objects) is forwarded as the raw GetValue()
+// result so a future field can extend without churning this function.
+func literalValue(v ast.Value) any {
+	if v == nil {
+		return nil
+	}
+	switch x := v.(type) {
+	case *ast.StringValue:
+		return x.Value
+	case *ast.IntValue:
+		return x.Value // graphql-go returns the textual form; resolver coerces.
+	case *ast.FloatValue:
+		return x.Value
+	case *ast.BooleanValue:
+		return x.Value
+	case *ast.EnumValue:
+		return x.Value
+	}
+	return v.GetValue()
 }
 
 // ---------------------------------------------------------------------------

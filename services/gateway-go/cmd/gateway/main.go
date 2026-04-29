@@ -65,6 +65,11 @@
 //	                              (GraphiQL UI). Default false; do NOT
 //	                              enable in production-facing
 //	                              deployments.
+//	GATEWAY_GRAPHQL_MAX_DEPTH     positive integer; caps the nesting
+//	                              depth of incoming GraphQL operations
+//	                              before they reach the executor.
+//	                              Default 10; introspection queries
+//	                              (__schema / __type) bypass the cap.
 package main
 
 import (
@@ -131,7 +136,7 @@ func main() {
 		log.Fatal().Err(err).Msg("invalid database configuration")
 	}
 
-	gqlHandler, natsClose, err := buildGraphQLHandler(apiHandlers)
+	gqlHandler, natsClose, err := buildGraphQLHandler(apiHandlers, corsCfg)
 	if err != nil {
 		log.Fatal().Err(err).Msg("invalid graphql configuration")
 	}
@@ -218,7 +223,7 @@ func main() {
 // not enable in production-facing deployments — the UI lets anyone
 // browse the schema and execute arbitrary queries against the
 // read-only surface.
-func buildGraphQLHandler(api *handlers.API) (*graph.Handler, func(), error) {
+func buildGraphQLHandler(api *handlers.API, cors middleware.CORSConfig) (*graph.Handler, func(), error) {
 	if api == nil {
 		// No store -> no GraphQL surface. Returning nil is the
 		// "feature off" signal the router config recognises.
@@ -259,6 +264,24 @@ func buildGraphQLHandler(api *handlers.API) (*graph.Handler, func(), error) {
 	if v := strings.TrimSpace(os.Getenv("GATEWAY_GRAPHQL_PLAYGROUND")); strings.EqualFold(v, "true") {
 		h.EnablePlayground = true
 	}
+
+	// Origin enforcement on the websocket transport. Browsers DO NOT
+	// apply CORS preflight to WebSocket upgrades, so the gateway's CORS
+	// middleware that protects POST /graphql gives this path no
+	// protection. Re-use the same allowed-origins list (and credential
+	// posture) so operators only have one knob to tune.
+	h.AllowedOrigins = cors.AllowedOrigins
+	h.AllowCredentials = cors.AllowCredentials
+	h.AllowReflectedOrigins = cors.AllowReflectedOrigins
+
+	// Optional depth cap. Anything > 0 wins; otherwise the handler
+	// falls back to its package default (defaultMaxQueryDepth).
+	if v := strings.TrimSpace(os.Getenv("GATEWAY_GRAPHQL_MAX_DEPTH")); v != "" {
+		if n, perr := strconv.Atoi(v); perr == nil && n > 0 {
+			h.MaxQueryDepth = n
+		}
+	}
+
 	return h, natsClose, nil
 }
 
