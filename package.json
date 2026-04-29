@@ -27,11 +27,6 @@
     "*.{js,jsx,ts,tsx,json,css}": ["biome check --write --no-errors-on-unmatched"],
     "*.{sh}": ["shellcheck --severity=warning"]
   },
-  "pnpm": {
-    "overrides": {
-      "undici": "^6.24.0"
-    }
-  },
   "engines": {
     "node": ">=22.0.0",
     "pnpm": ">=10.0.0"

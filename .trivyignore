@@ -30,3 +30,18 @@ CVE-2025-52881  # runtime-only, test-only dep
 CVE-2025-52565  # runtime-only, test-only dep
 CVE-2025-31133  # runtime-only, test-only dep
 CVE-2024-21626  # leaked fd, runtime-only; test-only dep
+
+# --- packages/acp-sdk-e2e test deps (testcontainers -> undici 5.x) ---------
+#
+# testcontainers@10 pins undici to 5.29.0 internally for its docker-engine
+# HTTP client. The package is in devDependencies of @titular/acp-sdk-e2e and
+# is only loaded by integration test suites that spin up containers — it is
+# never imported by the published acp-sdk / acp-cli runtime, the gateway, or
+# the indexer. We previously tried a workspace-wide `pnpm.overrides` to force
+# undici@^6, but that broke vitest in apps/web: jsdom@29 imports the internal
+# path `undici/lib/handler/wrap-handler.js` which only exists in undici 7.x.
+# Both CVEs are DoS vectors against the HTTP client; testcontainers only ever
+# speaks to a local docker socket inside CI, so the threat model doesn't apply.
+# Re-audit when testcontainers ships a release that targets undici >=6.
+CVE-2026-1526  # undici DoS via unbounded memory; test-only (testcontainers)
+CVE-2026-2229  # undici DoS via invalid WebSocket; test-only (testcontainers)
