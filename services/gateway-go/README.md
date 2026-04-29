@@ -30,6 +30,27 @@ flags:
 | `GATEWAY_RATE_LIMIT_RPS` | Per-key token-bucket refill rate; `0` disables limiting. |
 | `GATEWAY_RATE_LIMIT_BURST` | Per-key burst capacity; `0` disables limiting. |
 | `GATEWAY_TRUSTED_PROXIES` | Comma-separated CIDRs forwarded to `gin.SetTrustedProxies`. |
+| `GATEWAY_JWT_SECRET` | Base64-encoded HMAC key (>=32 bytes after decode). Setting this enables the SIWE auth endpoints. |
+| `GATEWAY_JWT_ISSUER` | `iss` claim minted into and required on every JWT. Defaults to `titular-gateway`. |
+| `GATEWAY_JWT_TTL` | Session lifetime as a Go duration. Defaults to `24h`. |
+| `GATEWAY_REDIS_URL` | Redis connection URL (`redis://host:port/db`). Required when `GATEWAY_JWT_SECRET` is set. |
+| `GATEWAY_SIWE_DOMAIN` | The value the SIWE message MUST declare in its `domain` line. Pinned server-side to prevent cross-site replay. |
+| `GATEWAY_SIWE_CHAIN_ID` | The chain id the SIWE message MUST declare. Defaults to `84532` (Base Sepolia). |
+
+### SIWE auth (`/auth/*`)
+
+When `GATEWAY_JWT_SECRET` is set the gateway exposes:
+
+- `POST /auth/siwe/nonce` — issues a single-use nonce, stored in Redis with a 5
+  minute TTL.
+- `POST /auth/siwe/verify` — accepts `{ "message": "<EIP-4361>", "signature":
+  "0x..." }`, validates domain, chain id, time window and signature, atomically
+  consumes the nonce, mints a JWT and seeds a Redis session.
+- `POST /auth/logout` — invalidates the session keyed by the JWT's `jti`.
+
+Protected routes can opt in to authentication via `auth.RequireAuth(handlers)`.
+The middleware double-checks the JWT signature **and** the Redis session, so
+deleting a session immediately revokes every token it backs.
 
 ### `GATEWAY_TRUSTED_PROXIES` — required when behind an L7 proxy
 

@@ -19,10 +19,26 @@
 //	                              UNSET trusts NO proxies (unspoofable client
 //	                              IP). Operators behind a known L7 proxy MUST
 //	                              set this explicitly.
+//	GATEWAY_JWT_SECRET            base64-encoded HMAC key (>=32 bytes after
+//	                              decode). REQUIRED to enable SIWE auth; when
+//	                              unset the /auth endpoints are not mounted.
+//	                              Short or non-base64 values fail startup.
+//	GATEWAY_JWT_ISSUER            iss claim minted into and required on every
+//	                              JWT. Defaults to "titular-gateway".
+//	GATEWAY_JWT_TTL               session lifetime as a Go duration (e.g.
+//	                              "24h"). Defaults to 24h.
+//	GATEWAY_REDIS_URL             redis connection URL (redis://host:port/db).
+//	                              REQUIRED when JWT_SECRET is set.
+//	GATEWAY_SIWE_DOMAIN           the value the SIWE message MUST declare in
+//	                              its `domain` line. Pinned server-side to
+//	                              prevent cross-site replay.
+//	GATEWAY_SIWE_CHAIN_ID         the chain id the SIWE message MUST declare.
+//	                              Defaults to 84532 (Base Sepolia).
 package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net"
 	"net/http"
@@ -34,9 +50,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/auth"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/router"
@@ -65,12 +83,18 @@ func main() {
 		log.Fatal().Err(err).Msg("invalid CORS configuration")
 	}
 
+	authHandlers, redisClient, err := buildAuthHandlers(context.Background())
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid auth configuration")
+	}
+
 	cfg := router.Config{
 		Logger:         log.Logger,
 		Service:        service,
 		CORS:           corsCfg,
 		RateLimit:      buildRateLimitConfig(),
 		TrustedProxies: parseList(os.Getenv("GATEWAY_TRUSTED_PROXIES")),
+		Auth:           authHandlers,
 	}
 
 	built := router.NewWithConfigLifecycle(cfg, agentHandlers, jobHandlers)
@@ -108,6 +132,95 @@ func main() {
 
 	// Stop background goroutines owned by the router (rate-limit sweeper).
 	built.Stop()
+
+	// Close the Redis client we own. The router does not — see
+	// buildAuthHandlers — so we are responsible for it on shutdown.
+	if redisClient != nil {
+		if err := redisClient.Close(); err != nil {
+			log.Warn().Err(err).Msg("redis close")
+		}
+	}
+}
+
+// buildAuthHandlers parses the SIWE/JWT/Redis env knobs and returns either a
+// fully-wired *auth.Handlers (plus the Redis client we now own) or nil to
+// indicate that auth is disabled. We refuse to start when the env is partly
+// configured — half-configured auth is the dangerous state.
+func buildAuthHandlers(ctx context.Context) (*auth.Handlers, *redis.Client, error) {
+	rawSecret := strings.TrimSpace(os.Getenv("GATEWAY_JWT_SECRET"))
+	if rawSecret == "" {
+		// Explicitly opt-out: SIWE not configured. Routes are not mounted.
+		return nil, nil, nil
+	}
+
+	secret, err := base64.StdEncoding.DecodeString(rawSecret)
+	if err != nil {
+		return nil, nil, errors.New("GATEWAY_JWT_SECRET must be base64-encoded")
+	}
+
+	issuer := envOr("GATEWAY_JWT_ISSUER", "titular-gateway")
+
+	ttl := 24 * time.Hour
+	if v := strings.TrimSpace(os.Getenv("GATEWAY_JWT_TTL")); v != "" {
+		parsed, perr := time.ParseDuration(v)
+		if perr != nil {
+			return nil, nil, errors.New("GATEWAY_JWT_TTL must be a Go duration")
+		}
+		ttl = parsed
+	}
+
+	signer, err := auth.NewJWTSigner(auth.SignerConfig{
+		Secret: secret,
+		Issuer: issuer,
+		TTL:    ttl,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	redisURL := strings.TrimSpace(os.Getenv("GATEWAY_REDIS_URL"))
+	if redisURL == "" {
+		return nil, nil, errors.New("GATEWAY_REDIS_URL required when GATEWAY_JWT_SECRET is set")
+	}
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		return nil, nil, errors.New("GATEWAY_REDIS_URL invalid")
+	}
+	client := redis.NewClient(opts)
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		_ = client.Close()
+		return nil, nil, errors.New("redis ping failed")
+	}
+
+	domain := strings.TrimSpace(os.Getenv("GATEWAY_SIWE_DOMAIN"))
+	if domain == "" {
+		_ = client.Close()
+		return nil, nil, errors.New("GATEWAY_SIWE_DOMAIN required when GATEWAY_JWT_SECRET is set")
+	}
+
+	chainID := 84532 // Base Sepolia default
+	if v := strings.TrimSpace(os.Getenv("GATEWAY_SIWE_CHAIN_ID")); v != "" {
+		parsed, perr := strconv.Atoi(v)
+		if perr != nil || parsed <= 0 {
+			_ = client.Close()
+			return nil, nil, errors.New("GATEWAY_SIWE_CHAIN_ID must be a positive integer")
+		}
+		chainID = parsed
+	}
+
+	h, err := auth.NewHandlers(auth.HandlerConfig{
+		Store:   auth.NewRedisStore(client),
+		Signer:  signer,
+		Domain:  domain,
+		ChainID: chainID,
+	})
+	if err != nil {
+		_ = client.Close()
+		return nil, nil, err
+	}
+	return h, client, nil
 }
 
 // envOr returns the value of the named env var, falling back to def when
