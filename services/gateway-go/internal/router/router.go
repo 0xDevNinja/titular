@@ -21,6 +21,7 @@ import (
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/graph"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/sse"
 )
 
 // Config controls how the gateway router is constructed.
@@ -76,6 +77,13 @@ type Config struct {
 	// Subscription resolvers both need a Store, so a missing API
 	// implies no GraphQL surface either.
 	GraphQL *graph.Handler
+
+	// SSE, when non-nil, is the Server-Sent Events handler introduced
+	// in M4 (#90). Mounted at /events for one-way NATS-fanout streams
+	// over plain HTTP. Absent when the gateway is started without
+	// NATS — the multiplexer requires a NATS connection, so a missing
+	// GATEWAY_NATS_URL implies no SSE surface either.
+	SSE *sse.Handler
 }
 
 // DefaultConfig returns a Config suitable for local development.
@@ -246,6 +254,17 @@ func NewWithConfigLifecycle(
 	if cfg.GraphQL != nil {
 		gqlGroup := engine.Group("")
 		cfg.GraphQL.Register(gqlGroup)
+	}
+
+	// M4 (#90) — SSE multiplexer. Mounted at the engine root so the
+	// canonical path is `/events`, matching the SDK's expected URL
+	// shape. Inherits the rate-limiter so a single client cannot open
+	// arbitrarily many concurrent connections; auth is intentionally
+	// absent because the surface is read-only and parallels the
+	// public-read GraphQL subscription transport (#89).
+	if cfg.SSE != nil {
+		sseGroup := engine.Group("")
+		cfg.SSE.Register(sseGroup)
 	}
 
 	// Legacy /health probe retained for backwards compatibility with M2/M3

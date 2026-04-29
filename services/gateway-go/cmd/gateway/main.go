@@ -60,7 +60,10 @@
 //	                              subscriptions; when unset, GraphQL
 //	                              subscriptions resolve against an
 //	                              immediately-closed channel (queries
-//	                              still work).
+//	                              still work). Also enables the SSE
+//	                              multiplexer at /events; without this
+//	                              env var the SSE surface is not
+//	                              mounted at all.
 //	GATEWAY_GRAPHQL_PLAYGROUND    "true" enables GET /graphql/playground
 //	                              (GraphiQL UI). Default false; do NOT
 //	                              enable in production-facing
@@ -96,6 +99,7 @@ import (
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/router"
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/sse"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/store"
 )
 
@@ -136,9 +140,25 @@ func main() {
 		log.Fatal().Err(err).Msg("invalid database configuration")
 	}
 
-	gqlHandler, natsClose, err := buildGraphQLHandler(apiHandlers, corsCfg)
+	// Single shared NATS connection for both the GraphQL subscription
+	// bus (#89) and the SSE multiplexer (#90). One connection avoids
+	// duplicate auth handshakes and keeps the connection pool size
+	// predictable in shared NATS clusters; the indexer publisher
+	// dedup window means consumers can use the same wire stream
+	// without coordinating.
+	natsConn, natsClose, err := buildNATSConn()
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid NATS configuration")
+	}
+
+	gqlHandler, err := buildGraphQLHandler(apiHandlers, corsCfg, natsConn)
 	if err != nil {
 		log.Fatal().Err(err).Msg("invalid graphql configuration")
+	}
+
+	sseHandler, sseStop, err := buildSSEHandler(natsConn)
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid SSE configuration")
 	}
 
 	cfg := router.Config{
@@ -151,6 +171,7 @@ func main() {
 		SIWS:           siwsHandlers,
 		API:            apiHandlers,
 		GraphQL:        gqlHandler,
+		SSE:            sseHandler,
 	}
 
 	built := router.NewWithConfigLifecycle(cfg, agentHandlers, jobHandlers)
@@ -202,64 +223,84 @@ func main() {
 		dbClose()
 	}
 
-	// Close the NATS connection backing the GraphQL subscription bus.
+	// Stop the SSE multiplexer BEFORE closing the NATS connection so
+	// the shutdown order matches the reverse of construction: the
+	// multiplexer's NATS subscriptions need a live connection to
+	// unsubscribe cleanly.
+	if sseStop != nil {
+		sseStop()
+	}
+
+	// Close the shared NATS connection. Must run after sseStop above
+	// AND after srv.Shutdown — both the GraphQL subscription bus and
+	// the SSE multiplexer can issue final NATS calls during their
+	// teardown.
 	if natsClose != nil {
 		natsClose()
 	}
 }
 
+// buildNATSConn opens the single shared NATS connection consumed by
+// both the GraphQL subscription bus (#89) and the SSE multiplexer
+// (#90). Returns (nil, nil, nil) when GATEWAY_NATS_URL is unset — the
+// downstream feature builders treat a nil connection as "feature off"
+// and mount their handlers in nilBus / no-SSE form so the gateway
+// still serves queries.
+//
+// The returned close function tears the connection down; callers MUST
+// invoke it on graceful shutdown AFTER stopping every subsystem that
+// holds an active subscription on the connection.
+func buildNATSConn() (*nats.Conn, func(), error) {
+	url := strings.TrimSpace(os.Getenv("GATEWAY_NATS_URL"))
+	if url == "" {
+		return nil, nil, nil
+	}
+	nc, err := nats.Connect(url, nats.Timeout(5*time.Second))
+	if err != nil {
+		return nil, nil, errors.New("GATEWAY_NATS_URL: " + err.Error())
+	}
+	return nc, nc.Close, nil
+}
+
 // buildGraphQLHandler wires the GraphQL surface introduced in M4 (#89).
-// It is a no-op (returns nil, nil, nil) when the gateway is launched
+// It is a no-op (returns nil, nil) when the gateway is launched
 // without GATEWAY_DATABASE_URL — Query and Subscription resolvers both
 // need a Store to be useful, and silently mounting a query-less endpoint
 // would mask deployment misconfiguration.
 //
-// GATEWAY_NATS_URL is optional: when unset, subscription resolvers fall
-// back to graph.NilBus() so subscriber clients see a clean
-// end-of-stream rather than a hang. Queries are unaffected.
+// natsConn is optional: when nil, subscription resolvers fall back to
+// graph.NilBus() so subscriber clients see a clean end-of-stream
+// rather than a hang. Queries are unaffected.
 //
 // GATEWAY_GRAPHQL_PLAYGROUND defaults to off; setting it to "true" mounts
 // the GET /graphql/playground GraphiQL UI for local development. Do
 // not enable in production-facing deployments — the UI lets anyone
 // browse the schema and execute arbitrary queries against the
 // read-only surface.
-func buildGraphQLHandler(api *handlers.API, cors middleware.CORSConfig) (*graph.Handler, func(), error) {
+func buildGraphQLHandler(api *handlers.API, cors middleware.CORSConfig, natsConn *nats.Conn) (*graph.Handler, error) {
 	if api == nil {
 		// No store -> no GraphQL surface. Returning nil is the
 		// "feature off" signal the router config recognises.
-		return nil, nil, nil
+		return nil, nil
 	}
 
 	resolver := &graph.Resolver{Store: api.Store}
 
-	var natsClose func()
-	if url := strings.TrimSpace(os.Getenv("GATEWAY_NATS_URL")); url != "" {
-		nc, err := nats.Connect(url, nats.Timeout(5*time.Second))
+	if natsConn != nil {
+		bus, err := graph.NewNATSBus(natsConn)
 		if err != nil {
-			return nil, nil, errors.New("GATEWAY_NATS_URL: " + err.Error())
-		}
-		bus, err := graph.NewNATSBus(nc)
-		if err != nil {
-			nc.Close()
-			return nil, nil, err
+			return nil, err
 		}
 		resolver.Bus = bus
-		natsClose = nc.Close
 	}
 
 	schema, err := graph.NewSchema(resolver)
 	if err != nil {
-		if natsClose != nil {
-			natsClose()
-		}
-		return nil, nil, err
+		return nil, err
 	}
 	h, err := graph.NewHandler(schema, resolver)
 	if err != nil {
-		if natsClose != nil {
-			natsClose()
-		}
-		return nil, nil, err
+		return nil, err
 	}
 	if v := strings.TrimSpace(os.Getenv("GATEWAY_GRAPHQL_PLAYGROUND")); strings.EqualFold(v, "true") {
 		h.EnablePlayground = true
@@ -282,7 +323,59 @@ func buildGraphQLHandler(api *handlers.API, cors middleware.CORSConfig) (*graph.
 		}
 	}
 
-	return h, natsClose, nil
+	return h, nil
+}
+
+// buildSSEHandler wires the SSE multiplexer introduced in M4 (#90).
+// Returns (nil, nil, nil) when natsConn is nil; the SSE surface
+// requires a live NATS connection to fan messages out, and a NATS-less
+// gateway has no events to stream.
+//
+// The returned stop function shuts the multiplexer's hub goroutine
+// down (closes every subscriber's channel, unsubscribes from NATS).
+// Callers MUST invoke it BEFORE closing the shared NATS connection so
+// the unsubscribes complete on a live transport.
+//
+// JetStream context is opened lazily — when JetStream isn't available
+// on the connection (e.g. an embedded server in tests with JS
+// disabled), the handler still serves live tail and silently skips
+// Last-Event-ID replay. That parallels the publisher's behaviour
+// where EnsureStream is the only mutating call site.
+func buildSSEHandler(natsConn *nats.Conn) (*sse.Handler, func(), error) {
+	if natsConn == nil {
+		return nil, nil, nil
+	}
+	mux, err := sse.NewMultiplexer(sse.Config{
+		NATS:   natsConn,
+		Logger: log.Logger,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := mux.Start(); err != nil {
+		return nil, nil, err
+	}
+
+	// JetStream is best-effort. JetStream() returns an error only when
+	// the server has rejected the request (e.g. JS not enabled on the
+	// connection's permissions); in that case we serve live tail
+	// without replay rather than failing startup.
+	js, jsErr := natsConn.JetStream()
+	if jsErr != nil {
+		log.Warn().Err(jsErr).Msg("sse: jetstream unavailable, replay disabled")
+		js = nil
+	}
+
+	h, err := sse.NewHandler(sse.HandlerConfig{
+		Multiplexer: mux,
+		JetStream:   js,
+		Logger:      log.Logger,
+	})
+	if err != nil {
+		mux.Stop()
+		return nil, nil, err
+	}
+	return h, mux.Stop, nil
 }
 
 // buildAPIHandlers opens a Postgres pool from GATEWAY_DATABASE_URL and wires
