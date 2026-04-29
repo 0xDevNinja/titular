@@ -83,6 +83,20 @@ func parseLimitParam(c *gin.Context) (int, bool) {
 }
 
 // listAgents serves GET /api/v1/agents.
+//
+// @Summary      List agents
+// @Description  Returns a paginated, opaque-cursor page of registered agents.
+// @Description  Filterable by agent kind. Cursor is base64-encoded JSON the
+// @Description  client MUST treat as opaque and pass back unmodified.
+// @Tags         agents
+// @Produce      json
+// @Param        cursor  query     string  false  "opaque pagination cursor; omit for the first page"
+// @Param        limit   query     int     false  "page size; 1..200, default 50"  minimum(1)  maximum(200)
+// @Param        kind    query     string  false  "agent kind filter"  Enums(launchpad, acp)
+// @Success      200     {object}  openapi.AgentsPage
+// @Failure      400     {object}  openapi.AuthErrorResponse  "unknown query parameter, or kind/limit out of range"
+// @Failure      500     {object}  openapi.AuthErrorResponse  "internal server error"
+// @Router       /api/v1/agents [get]
 func (a *API) listAgents(c *gin.Context) {
 	if rejectUnknownParams(c, allowedQueryParams["agents"]) {
 		return
@@ -114,6 +128,17 @@ func (a *API) listAgents(c *gin.Context) {
 
 // getAgent serves GET /api/v1/agents/:id. The :id is either a numeric primary
 // key or the kind-qualified slug "kind:agent_id".
+//
+// @Summary      Get agent
+// @Description  Returns the registered agent identified by its primary key
+// @Description  (decimal int64) or kind-qualified slug "kind:agent_id".
+// @Tags         agents
+// @Produce      json
+// @Param        id   path      string  true  "agent primary key or kind:agent_id slug"
+// @Success      200  {object}  store.Agent
+// @Failure      404  {object}  openapi.AuthErrorResponse  "agent not found"
+// @Failure      500  {object}  openapi.AuthErrorResponse  "internal server error"
+// @Router       /api/v1/agents/{id} [get]
 func (a *API) getAgent(c *gin.Context) {
 	if rejectUnknownParams(c, allowedQueryParams["agent"]) {
 		return
@@ -132,6 +157,23 @@ func (a *API) getAgent(c *gin.Context) {
 }
 
 // listTrades serves GET /api/v1/trades.
+//
+// @Summary      List trades
+// @Description  Returns a paginated, opaque-cursor page of bonding-curve
+// @Description  trades (buy + sell). Filterable by agent token address and
+// @Description  by an inclusive [from, to] window on the indexer-recorded
+// @Description  created_at timestamp.
+// @Tags         trades
+// @Produce      json
+// @Param        cursor       query     string  false  "opaque pagination cursor"
+// @Param        limit        query     int     false  "page size; 1..200, default 50"  minimum(1)  maximum(200)
+// @Param        agent_token  query     string  false  "0x-prefixed 20-byte token address"
+// @Param        from         query     string  false  "inclusive RFC 3339 lower bound on created_at"  format(date-time)
+// @Param        to           query     string  false  "inclusive RFC 3339 upper bound on created_at"  format(date-time)
+// @Success      200          {object}  openapi.TradesPage
+// @Failure      400          {object}  openapi.AuthErrorResponse  "unknown query parameter, or invalid time/limit"
+// @Failure      500          {object}  openapi.AuthErrorResponse  "internal server error"
+// @Router       /api/v1/trades [get]
 func (a *API) listTrades(c *gin.Context) {
 	if rejectUnknownParams(c, allowedQueryParams["trades"]) {
 		return
@@ -163,6 +205,19 @@ func (a *API) listTrades(c *gin.Context) {
 }
 
 // listJobs serves GET /api/v1/jobs.
+//
+// @Summary      List ACP jobs
+// @Description  Returns a paginated, opaque-cursor page of ACP jobs.
+// @Description  Filterable by phase via the `status` query parameter.
+// @Tags         jobs
+// @Produce      json
+// @Param        cursor  query     string  false  "opaque pagination cursor"
+// @Param        limit   query     int     false  "page size; 1..200, default 50"  minimum(1)  maximum(200)
+// @Param        status  query     string  false  "ACP job phase filter"  Enums(created, funded, active, completed, cancelled, disputed, released, resolved)
+// @Success      200     {object}  openapi.JobsPage
+// @Failure      400     {object}  openapi.AuthErrorResponse  "unknown query parameter, or invalid status/limit"
+// @Failure      500     {object}  openapi.AuthErrorResponse  "internal server error"
+// @Router       /api/v1/jobs [get]
 func (a *API) listJobs(c *gin.Context) {
 	if rejectUnknownParams(c, allowedQueryParams["jobs"]) {
 		return
@@ -193,6 +248,16 @@ func (a *API) listJobs(c *gin.Context) {
 }
 
 // stats serves GET /api/v1/stats.
+//
+// @Summary      Aggregate protocol stats
+// @Description  Returns total agent / job / trade counters and the highest
+// @Description  block number observed by the indexer track. Cached to a few
+// @Description  seconds upstream; clients SHOULD NOT poll faster than 5s.
+// @Tags         stats
+// @Produce      json
+// @Success      200  {object}  store.Stats
+// @Failure      500  {object}  openapi.AuthErrorResponse  "internal server error"
+// @Router       /api/v1/stats [get]
 func (a *API) stats(c *gin.Context) {
 	st, err := a.Store.Stats(c.Request.Context())
 	if err != nil {

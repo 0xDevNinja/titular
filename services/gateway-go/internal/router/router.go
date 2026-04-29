@@ -21,6 +21,7 @@ import (
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/graph"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/openapi"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/sse"
 )
 
@@ -84,6 +85,15 @@ type Config struct {
 	// NATS — the multiplexer requires a NATS connection, so a missing
 	// GATEWAY_NATS_URL implies no SSE surface either.
 	SSE *sse.Handler
+
+	// OpenAPI, when non-nil, is the OpenAPI 3.0 spec bundle introduced
+	// in M4 (#91). Mounting is unconditional for the raw spec endpoints
+	// (/swagger/doc.json, /swagger/doc.yaml) so SDK generators can
+	// always fetch the document; the Swagger UI viewer is gated by
+	// the bundle's own EnableUI flag (operator-set via
+	// GATEWAY_SWAGGER_UI). Absent in tests that don't care about
+	// documentation surface.
+	OpenAPI *openapi.Spec
 }
 
 // DefaultConfig returns a Config suitable for local development.
@@ -197,10 +207,7 @@ func NewWithConfigLifecycle(
 	engine.Use(middleware.CORS(cfg.CORS))
 	engine.Use(limiter.Handler)
 
-	engine.GET("/healthz", func(c *gin.Context) {
-		c.Header("Content-Type", "application/json; charset=utf-8")
-		c.String(http.StatusOK, `{"status":"ok"}`)
-	})
+	engine.GET("/healthz", HealthZ)
 
 	// SIWE/SIWS auth — mounted before /v1 so the routes can never be
 	// accidentally shadowed by a /v1/* catch-all. The /auth group inherits
@@ -267,12 +274,21 @@ func NewWithConfigLifecycle(
 		cfg.SSE.Register(sseGroup)
 	}
 
+	// M4 (#91) — OpenAPI 3.0 spec + optional Swagger UI viewer.
+	// Mounted at the engine root so the canonical paths are
+	// /swagger/doc.{json,yaml} regardless of which other M4 surfaces
+	// are wired. Inherits the rate-limiter (one shared budget for the
+	// whole gateway). The viewer HTML is dev-only, gated server-side
+	// by the spec's EnableUI flag — see internal/openapi for the env
+	// var binding.
+	if cfg.OpenAPI != nil {
+		oasGroup := engine.Group("")
+		cfg.OpenAPI.Register(oasGroup)
+	}
+
 	// Legacy /health probe retained for backwards compatibility with M2/M3
 	// integration scripts. New consumers should use /healthz.
-	engine.GET("/health", func(c *gin.Context) {
-		c.Header("Content-Type", "application/json; charset=utf-8")
-		c.String(http.StatusOK, `{"status":"ok"}`)
-	})
+	engine.GET("/health", HealthZ)
 
 	return Built{Handler: engine, stop: limiter.Stop}
 }

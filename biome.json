@@ -40,7 +40,11 @@
       "target",
       "contracts/evm/out",
       "contracts/evm/cache",
-      "**/*.min.js"
+      "**/*.min.js",
+      "services/gateway-go/docs/openapi.json",
+      "services/gateway-go/docs/openapi.yaml",
+      "services/gateway-go/docs/swagger.json",
+      "services/gateway-go/docs/swagger.yaml"
     ]
   }
 }

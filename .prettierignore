@@ -1,0 +1,9 @@
+# Generated OpenAPI artefacts. The gateway openapi-check CI job regenerates
+# these via services/gateway-go/scripts/openapi.sh and diffs the bytes; the
+# script's output (swag JSON + Go json.MarshalIndent) is the source of truth,
+# not prettier's reformatting. Excluding here keeps local pre-push prettier
+# checks from rewriting these files into a shape CI then rejects as drift.
+services/gateway-go/docs/openapi.json
+services/gateway-go/docs/openapi.yaml
+services/gateway-go/docs/swagger.json
+services/gateway-go/docs/swagger.yaml

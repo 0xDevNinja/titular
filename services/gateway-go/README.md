@@ -39,6 +39,7 @@ flags:
 | `GATEWAY_SIWS_DOMAIN` | The value the SIWS (Sign-In With Solana) message MUST declare. Falls back to `GATEWAY_SIWE_DOMAIN` when unset so single-domain deployments configure once. |
 | `GATEWAY_SIWS_CLUSTER` | Solana cluster the SIWS message MUST declare. One of `devnet`, `mainnet-beta`, `testnet`. Setting this enables `/auth/siws/*`. No default — operators must opt in explicitly. |
 | `GATEWAY_DATABASE_URL` | Read-only Postgres DSN (`postgres://user:pw@host:port/db`). Setting this enables the M4 read-only REST API under `/api/v1`. Unset disables the API; the binary still serves the M2/M3 fixture surface. |
+| `GATEWAY_SWAGGER_UI` | `true` mounts the Swagger UI viewer at `/swagger/`. Default off. The raw spec at `/swagger/doc.{json,yaml}` is always served. |
 
 ### SIWE auth (`/auth/*`)
 
@@ -96,6 +97,37 @@ outside `[1, 200]` return 400. Unknown query parameters return 400 to surface
 client typos. The endpoints are read-only and live outside the SIWE wall —
 deployments that want them gated should wrap the group in
 `auth.RequireAuth(cfg.Auth)`.
+
+### OpenAPI specification (`/swagger/*`)
+
+The gateway publishes its REST and auth surface as an OpenAPI 3.0 document
+served by the binary itself:
+
+| Endpoint | Description |
+|---|---|
+| `GET /swagger/doc.json` | OpenAPI 3.0 spec, JSON. Always available. |
+| `GET /swagger/doc.yaml` | OpenAPI 3.0 spec, YAML. Always available. |
+| `GET /swagger/` | Swagger UI viewer; mounted only when `GATEWAY_SWAGGER_UI=true`. |
+
+The spec is generated from `swag` annotation comments alongside the handler
+implementations. To regenerate after editing an annotation or adding a new
+endpoint:
+
+```bash
+# from services/gateway-go
+./scripts/openapi.sh
+```
+
+The pipeline runs `swag init` (Swagger 2.0) then converts to OpenAPI 3.0 with
+`scripts/openapi-gen` (which also patches in protocol-specific scalar formats —
+`address`, `bytes32`, `bigint`). Both forms are committed under `docs/` and
+embedded into the binary at compile time. CI's `gateway-openapi-check` job
+re-runs the script and fails on any drift.
+
+The Swagger UI viewer is **off by default**. Enable it only on internal /
+development deployments — it does not change what the spec exposes (the spec
+itself is public), but it is a discovery aid for attackers and adds nothing
+for end users.
 
 ### `GATEWAY_TRUSTED_PROXIES` — required when behind an L7 proxy
 
