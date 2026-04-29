@@ -1,0 +1,27 @@
+{
+  "name": "@titular/example-hello-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Minimal end-to-end ACP agent: registers, polls the gateway for jobs targeted at it, accepts the first one, and submits a hello-world result.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --enable-source-maps dist/index.js",
+    "dev": "tsx src/index.ts",
+    "lint": "biome check src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@titular/acp-sdk": "workspace:*",
+    "viem": "^2.21.50"
+  },
+  "devDependencies": {
+    "@types/node": "~22.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.6.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
