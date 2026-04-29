@@ -2,6 +2,29 @@
   "name": "@titular/acp-sdk",
   "version": "0.1.0-alpha.0",
   "description": "TypeScript SDK for the Titular ACP (Agent Commerce Protocol) — register agents, browse the registry, and create on-chain jobs against a Titular gateway.",
+  "keywords": [
+    "titular",
+    "acp",
+    "agent-commerce-protocol",
+    "agents",
+    "ai-agents",
+    "ethereum",
+    "evm",
+    "base",
+    "viem",
+    "web3",
+    "sdk"
+  ],
+  "homepage": "https://github.com/0xDevNinja/titular/tree/main/packages/acp-sdk-ts#readme",
+  "bugs": {
+    "url": "https://github.com/0xDevNinja/titular/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xDevNinja/titular.git",
+    "directory": "packages/acp-sdk-ts"
+  },
+  "author": "Titular Contributors",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -30,7 +53,8 @@
     "build": "tsc -p tsconfig.build.json",
     "lint": "biome check src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "docs": "typedoc --options typedoc.json"
   },
   "dependencies": {
     "viem": "^2.21.50"

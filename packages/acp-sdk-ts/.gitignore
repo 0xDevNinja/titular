@@ -1,0 +1,4 @@
+# Generated TypeDoc output. Regenerate locally with `pnpm -F @titular/acp-sdk
+# docs`. Not committed: docs would drift between releases and force noisy
+# diffs on every public-API change.
+docs/api/

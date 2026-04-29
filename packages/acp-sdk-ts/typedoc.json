@@ -1,0 +1,26 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "@titular/acp-sdk",
+  "entryPoints": [
+    "src/index.ts",
+    "src/llm/index.ts",
+    "src/providers/alchemy.ts",
+    "src/providers/types.ts",
+    "src/session-keys.ts"
+  ],
+  "entryPointStrategy": "expand",
+  "out": "docs/api",
+  "tsconfig": "tsconfig.build.json",
+  "plugin": ["typedoc-plugin-markdown"],
+  "readme": "README.md",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "categorizeByGroup": true,
+  "hideGenerator": true,
+  "githubPages": false,
+  "gitRevision": "main",
+  "sourceLinkTemplate": "https://github.com/0xDevNinja/titular/blob/{gitRevision}/{path}#L{line}"
+}
