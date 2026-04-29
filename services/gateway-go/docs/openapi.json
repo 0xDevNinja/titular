@@ -80,8 +80,6 @@
           },
           "token": {
             "description": "Token is the bearer JWT to attach as Authorization: Bearer \u003ctoken\u003e.",
-            "format": "address",
-            "pattern": "^0x[a-fA-F0-9]{40}$",
             "type": "string"
           }
         },

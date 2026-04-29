@@ -117,8 +117,8 @@ func run() error {
 // swag has no annotation for custom formats (it can only emit standard
 // OpenAPI primitives + a handful of well-known formats), so we layer
 // the protocol-specific shape here. The patch is identity for any
-// schema we don't recognise — adding a new wire type does NOT silently
-// inherit an unrelated format hint.
+// (schema, field) pair we don't recognise — adding a new wire type
+// does NOT silently inherit an unrelated format hint.
 //
 // Mapping:
 //
@@ -127,13 +127,18 @@ func run() error {
 //	Bytes32 (0x-hex 32 bytes)           → format: bytes32, pattern: ^0x[a-fA-F0-9]{64}$
 //	Time                                → format: date-time
 //
-// The mapping is decided by inspecting field NAME (data shape would
-// require a registry; names match the indexer schema 1:1).
+// Classification is keyed by the (schemaName, fieldName) PAIR — not by
+// fieldName alone. A field-name-only patcher would mis-classify
+// homonyms across schemas: e.g. store.Job.token (ERC-20 contract addr,
+// genuinely 0x-hex 20 bytes) and openapi.AuthVerifyResponse.token
+// (opaque JWT bearer string) share the JSON name "token" but have
+// completely different wire shapes. Keying on schema name avoids the
+// collision and makes every classification explicit.
 func applyCustomScalars(doc *openapi3.T) {
 	if doc == nil || doc.Components == nil {
 		return
 	}
-	for _, schema := range doc.Components.Schemas {
+	for schemaName, schema := range doc.Components.Schemas {
 		if schema == nil || schema.Value == nil {
 			continue
 		}
@@ -141,15 +146,75 @@ func applyCustomScalars(doc *openapi3.T) {
 			if prop == nil || prop.Value == nil {
 				continue
 			}
-			patchFieldFormat(fieldName, prop.Value)
+			patchFieldFormat(schemaName, fieldName, prop.Value)
 		}
 	}
 }
 
-// patchFieldFormat mutates s in place when fieldName matches a known
-// protocol-specific scalar. The function is exported via an internal
-// alias in tests so the mapping table is visible to assertions.
-func patchFieldFormat(fieldName string, s *openapi3.Schema) {
+// scalarKind is the bespoke format we patch onto a (schema, field) pair.
+type scalarKind int
+
+const (
+	scalarNone scalarKind = iota
+	scalarAddress
+	scalarBytes32
+	scalarBigInt
+	scalarDateTime
+)
+
+// scalarClassification is the explicit allowlist of (schema, field)
+// pairs that get a custom format. Adding a new wire type means adding
+// rows here — there is no name-only fallback. SIWE/SIWS shared response
+// shapes (openapi.AuthVerifyRequest, openapi.AuthVerifyResponse) are
+// intentionally absent because their string fields are heterogeneous:
+//
+//   - AuthVerifyResponse.token is a JWT, not an address.
+//   - AuthVerifyResponse.address can be a 0x-hex EVM address (SIWE) or
+//     a base58 Solana pubkey (SIWS); neither fits the "address" format
+//     (which is EVM-specific, ^0x[a-fA-F0-9]{40}$). Leave it as plain
+//     string so SDK consumers don't reject valid SIWS responses.
+//   - AuthVerifyRequest.signature is hex (SIWE) or base58 (SIWS), same
+//     polymorphism.
+//
+// See TestSpecLeavesAuthVerifyTokenUnformatted /
+// TestSpecLeavesAuthVerifyAddressUnformatted for the regression guards.
+var scalarClassification = map[string]map[string]scalarKind{
+	"store.Agent": {
+		"agent_id":     scalarBigInt,
+		"capabilities": scalarBigInt,
+		"controller":   scalarAddress,
+		"creator":      scalarAddress,
+		"tx_hash":      scalarBytes32,
+		"created_at":   scalarDateTime,
+		"updated_at":   scalarDateTime,
+	},
+	"store.Trade": {
+		"trader":     scalarAddress,
+		"quote_in":   scalarBigInt,
+		"quote_out":  scalarBigInt,
+		"agent_in":   scalarBigInt,
+		"agent_out":  scalarBigInt,
+		"fee":        scalarBigInt,
+		"tx_hash":    scalarBytes32,
+		"created_at": scalarDateTime,
+	},
+	"store.Job": {
+		"agent_id":      scalarBigInt,
+		"budget":        scalarBigInt,
+		"clone_address": scalarAddress,
+		"principal":     scalarAddress,
+		"token":         scalarAddress,
+		"tx_hash":       scalarBytes32,
+		"created_at":    scalarDateTime,
+		"updated_at":    scalarDateTime,
+		"deadline":      scalarDateTime,
+	},
+}
+
+// patchFieldFormat mutates s in place when (schemaName, fieldName) is
+// in scalarClassification. The function is exercised by unit tests so
+// the mapping table stays visible to assertions.
+func patchFieldFormat(schemaName, fieldName string, s *openapi3.Schema) {
 	// We only patch string fields; numeric / bool / object fields
 	// inherit whatever the converter chose. An unset Type (nil
 	// *Types) shows up on bare $ref children — leave those alone too.
@@ -159,33 +224,29 @@ func patchFieldFormat(fieldName string, s *openapi3.Schema) {
 	if !s.Type.Is("string") {
 		return
 	}
+	fields, ok := scalarClassification[schemaName]
+	if !ok {
+		return
+	}
+	kind, ok := fields[fieldName]
+	if !ok {
+		return
+	}
 	stringType := &openapi3.Types{"string"}
-	switch fieldName {
-	case "tx_hash":
-		// 32-byte digest, NOT a 20-byte address. Handled first so the
-		// 20-byte address branch below cannot accidentally claim it.
+	switch kind {
+	case scalarBytes32:
 		s.Type = stringType
 		s.Format = "bytes32"
 		s.Pattern = `^0x[a-fA-F0-9]{64}$`
-
-	// Address fields — 0x-hex 20-byte EVM addresses.
-	case "trader", "creator", "controller", "principal", "token",
-		"clone_address":
+	case scalarAddress:
 		s.Type = stringType
 		s.Format = "address"
 		s.Pattern = `^0x[a-fA-F0-9]{40}$`
-
-	// Decimal-encoded uint256 fields.
-	case "agent_id", "budget", "fee", "quote_in", "quote_out",
-		"agent_in", "agent_out", "capabilities":
+	case scalarBigInt:
 		s.Type = stringType
 		s.Format = "bigint"
 		s.Pattern = `^[0-9]+$`
-
-	// Time fields — already RFC 3339 in the swag output (string +
-	// format: date-time inferred from time.Time), but pin explicitly
-	// in case a future swag release changes the inference.
-	case "created_at", "updated_at", "deadline":
+	case scalarDateTime:
 		s.Type = stringType
 		s.Format = "date-time"
 	}

@@ -75,6 +75,22 @@ type AuthVerifyRequest struct {
 }
 
 // AuthVerifyResponse is the shape of POST /auth/{siwe,siws}/verify.
+//
+// The string fields here are intentionally polymorphic and MUST stay
+// un-patched in the generated OpenAPI spec (no format / pattern):
+//
+//   - Token is a JWT bearer string, NOT an EVM address. It happens to
+//     share the JSON name "token" with store.Job.token (an ERC-20
+//     contract address), but the wire shape is completely different.
+//   - Address is a lowercase 0x-hex EVM address when the token was
+//     issued by /auth/siwe/verify, or a base58-encoded Solana pubkey
+//     when issued by /auth/siws/verify. The EVM "address" format
+//     (^0x[a-fA-F0-9]{40}$) would reject every valid SIWS response.
+//
+// scripts/openapi-gen scopes its scalar-format patcher by (schemaName,
+// fieldName) precisely to keep this struct's fields as plain strings.
+// See TestSpecLeavesAuthVerifyTokenUnformatted /
+// TestSpecLeavesAuthVerifyAddressUnformatted for the regression guards.
 type AuthVerifyResponse struct {
 	// Token is the bearer JWT to attach as Authorization: Bearer <token>.
 	Token string `json:"token"`
