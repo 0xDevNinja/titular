@@ -61,6 +61,12 @@ type Config struct {
 	TrustedProxies []string
 	Auth           *auth.Handlers
 	SIWS           *auth.SIWSHandlers
+
+	// API, when non-nil, is the Postgres-backed REST API handler bundle
+	// introduced in M4 (#88). Mounted under /api/v1; absent when the
+	// gateway runs without a database connection (e.g. in tests that only
+	// exercise the chassis).
+	API *handlers.API
 }
 
 // DefaultConfig returns a Config suitable for local development.
@@ -205,6 +211,17 @@ func NewWithConfigLifecycle(
 	// before. This keeps the existing handler signatures and tests intact.
 	v1 := buildV1Chi(agentHandlers, jobHandlers)
 	engine.Any("/v1/*proxyPath", gin.WrapH(v1))
+
+	// M4 (#88) — Postgres-backed REST API. Mounted under /api/v1 to keep it
+	// distinct from the fixture-backed /v1 surface above. Read-only by
+	// design, so it lives outside the auth wall: SDK consumers, browser
+	// clients and ops dashboards all need to hit these without holding a
+	// SIWE session. If a deployment wants to gate them, wrap the group in
+	// auth.RequireAuth(cfg.Auth) before calling Register.
+	if cfg.API != nil {
+		api := engine.Group("/api/v1")
+		cfg.API.Register(api)
+	}
 
 	// Legacy /health probe retained for backwards compatibility with M2/M3
 	// integration scripts. New consumers should use /healthz.
