@@ -84,18 +84,24 @@ func main() {
 	// Migrations are short-lived, but stitching their spans into a
 	// deploy trace lets operators see the boot DB sequence next to
 	// the application startup.
+	//
+	// Soft-fail posture: a flaky collector during deploy must NOT
+	// wedge schema migrations. We log the error and continue with the
+	// SDK left at no-op; operators who explicitly want the old
+	// hard-fail (e.g. CI runs that should refuse to ship unobserved)
+	// can set OTEL_FAIL_ON_INIT=1.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	otelShutdown, oerr := observability.Init(ctx, observability.Config{
 		ServiceName: "indexer-migrate",
 	})
 	if oerr != nil {
-		// Refuse rather than swallow — a misconfigured collector that
-		// returns an error here usually means an operator typo'd the
-		// endpoint, and we'd rather surface that at boot than emit
-		// nothing for the next hour.
-		fmt.Fprintf(os.Stderr, "migrate: observability init: %v\n", oerr)
-		os.Exit(1)
+		if os.Getenv("OTEL_FAIL_ON_INIT") == "1" {
+			fmt.Fprintf(os.Stderr, "migrate: observability init: %v\n", oerr)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "migrate: warn: otel init failed (continuing): %v\n", oerr)
+		otelShutdown = func(context.Context) error { return nil }
 	}
 	defer func() {
 		if err := otelShutdown(ctx); err != nil {

@@ -7,7 +7,11 @@ import (
 	"strings"
 
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/observability"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/store"
 )
 
@@ -191,6 +195,26 @@ func (b *natsBus) subscribe(
 	raw := make(chan rawMsg, subBufferSize)
 
 	sub, err := b.nc.Subscribe(subject, func(m *nats.Msg) {
+		// Trace continuity: extract any W3C TraceContext the publisher
+		// injected on the NATS header, then open a kind=consumer span
+		// as the immediate child of the producer span so a backend can
+		// stitch the two halves into a single distributed trace. The
+		// span ends immediately because the per-message work in this
+		// callback is just an enqueue — the decoder / fanout that runs
+		// in the goroutine below is observed at the outer subscribe
+		// level (e.g. the GraphQL stream's lifecycle span), not here.
+		// Header is best-effort: when missing/malformed the consume
+		// span starts a new trace, matching propagator semantics.
+		msgCtx := observability.ExtractNATSContext(context.Background(), m)
+		tracer := otel.Tracer("titular/gateway/graph/subscriptions")
+		_, span := tracer.Start(msgCtx, m.Subject+" consume",
+			trace.WithSpanKind(trace.SpanKindConsumer),
+			trace.WithAttributes(
+				attribute.String("messaging.system", "nats"),
+				attribute.String("messaging.source.name", m.Subject),
+				attribute.String("messaging.operation", "receive"),
+			),
+		)
 		select {
 		case raw <- rawMsg{subject: m.Subject, data: m.Data}:
 		default:
@@ -200,6 +224,7 @@ func (b *natsBus) subscribe(
 			// the fact that the typed channel is what the resolver
 			// observes for back-pressure visibility.
 		}
+		span.End()
 	})
 	if err != nil {
 		return err

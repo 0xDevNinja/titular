@@ -48,6 +48,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -178,18 +179,24 @@ func buildResource(ctx context.Context, cfg Config) (*resource.Resource, error) 
 // falls back to def when unset / malformed. Out-of-range values are
 // rejected (defaulted) rather than clamped so an operator who set "10"
 // instead of "0.1" sees zero traces and looks at the env.
+//
+// On a malformed / out-of-range value we emit a stderr warning so the
+// operator sees the typo at boot rather than wondering, an hour later
+// at the dashboard, why their "10" sample arg yielded the default.
 func resolveSampleRate(def float64) float64 {
+	defaultRate := 0.1
+	if def > 0 && def <= 1 {
+		defaultRate = def
+	}
 	raw := strings.TrimSpace(os.Getenv("OTEL_TRACES_SAMPLER_ARG"))
 	if raw != "" {
 		v, err := strconv.ParseFloat(raw, 64)
 		if err == nil && v >= 0 && v <= 1 {
 			return v
 		}
+		log.Printf("warn: invalid OTEL_TRACES_SAMPLER_ARG=%q, using default %.2f", raw, defaultRate)
 	}
-	if def > 0 && def <= 1 {
-		return def
-	}
-	return 0.1
+	return defaultRate
 }
 
 // stripScheme drops a leading http:// or https:// prefix from the endpoint

@@ -50,6 +50,7 @@
 package sse
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -58,6 +59,11 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/observability"
 )
 
 // SubjectPrefixes is the closed set of top-level prefixes the
@@ -399,7 +405,27 @@ func (m *Multiplexer) Subscribe(opts SubscribeOptions) (*Subscriber, error) {
 // blocking here would back-pressure the entire NATS client, which would
 // drop messages for OTHER consumers in the gateway (most importantly,
 // the GraphQL subscription bus that shares the same connection).
+//
+// Trace continuity: when the publisher injected a W3C TraceContext on
+// the NATS header, we extract it here and open a kind=consumer span as
+// the immediate child of the producer span so a backend can stitch the
+// two halves into a single distributed trace. Header is best-effort —
+// when missing/malformed the consume span starts a new trace, matching
+// the propagator's "parent is optional" contract.
 func (m *Multiplexer) dispatch(msg *nats.Msg) {
+	ctx := observability.ExtractNATSContext(context.Background(), msg)
+	tracer := otel.Tracer("titular/gateway/sse")
+	ctx, span := tracer.Start(ctx, msg.Subject+" consume",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "nats"),
+			attribute.String("messaging.source.name", msg.Subject),
+			attribute.String("messaging.operation", "receive"),
+		),
+	)
+	defer span.End()
+	_ = ctx // future child spans (per-subscriber send) will hang off this.
+
 	id := m.eventID(msg)
 	ev := Event{
 		ID:      id,

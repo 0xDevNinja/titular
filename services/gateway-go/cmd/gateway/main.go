@@ -181,11 +181,21 @@ func main() {
 	// middleware reads otel.GetTracerProvider() per-request). Init is
 	// a no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset, so a gateway
 	// without observability still starts cleanly.
+	//
+	// Soft-fail posture: a flaky collector during deploy must NOT
+	// wedge gateway startup. We log the error and continue with the
+	// SDK left at no-op; operators who explicitly want hard-fail (e.g.
+	// CI runs that should refuse to ship unobserved) can set
+	// OTEL_FAIL_ON_INIT=1.
 	otelShutdown, err := observability.Init(context.Background(), observability.Config{
 		ServiceName: service,
 	})
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to initialise observability")
+		if os.Getenv("OTEL_FAIL_ON_INIT") == "1" {
+			log.Fatal().Err(err).Msg("failed to initialise observability")
+		}
+		log.Warn().Err(err).Msg("otel init failed (continuing)")
+		otelShutdown = func(context.Context) error { return nil }
 	}
 
 	agentHandlers, err := handlers.NewAgentHandlers()
