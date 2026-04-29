@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -20,7 +19,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	natsserver "github.com/nats-io/nats-server/v2/server"
 	srvtest "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 
@@ -28,10 +26,6 @@ import (
 	"github.com/0xDevNinja/titular/services/indexer-go/internal/decoder"
 	"github.com/0xDevNinja/titular/services/indexer-go/internal/publisher"
 )
-
-// Package-level sanity reference. Mirrors the publisher unit-tests so a
-// future change that replaces srvtest cannot silently drop the import.
-var _ = natsserver.RANDOM_PORT
 
 // Throughput target. The issue body asks for "10k trades/min sustained
 // ingestion" — i.e. a long-running floor of 10000 events/minute end-to-end
@@ -516,10 +510,10 @@ func resetPublishStamps() {
 }
 
 // ---------------------------------------------------------------------------
-// Test_Loadtest_PublisherSustains10kPerMinute is the SLO assertion.
+// Test_Loadtest_PublisherOnly_Sustains10kPerMinute is the SLO assertion.
 // ---------------------------------------------------------------------------
 
-// Test_Loadtest_PublisherSustains10kPerMinute drives the indexer's
+// Test_Loadtest_PublisherOnly_Sustains10kPerMinute drives the indexer's
 // publisher path at the SLO floor for `loadDuration` (default 60s) and
 // asserts:
 //
@@ -528,6 +522,12 @@ func resetPublishStamps() {
 //  2. End-to-end p50/p95/p99 latency budgets are met.
 //  3. Every published event was observed by a JetStream consumer
 //     (no message loss past dedup) — within the drain window.
+//
+// Scope: this test exercises only the publisher → JetStream → consumer
+// segment of the pipeline. The synthetic event factory bypasses the
+// EVM subscriber and decoder.Dispatch path, and the consumer does not
+// write to a database. A full subscriber → decoder → publisher →
+// consumer → DB writer load test is tracked as a follow-up to issue #84.
 //
 // The test is `loadtest`-tagged so plain `go test ./...` (and the
 // `integration` CI job) skip it. CI runs it via a separate workflow job
@@ -539,7 +539,7 @@ func resetPublishStamps() {
 // is acceptable for an alpha SLO check; production load testing happens
 // against a deployed indexer with a real chain firehose, not this
 // embedded harness.
-func Test_Loadtest_PublisherSustains10kPerMinute(t *testing.T) {
+func Test_Loadtest_PublisherOnly_Sustains10kPerMinute(t *testing.T) {
 	if testing.Short() {
 		t.Skip("loadtest (use -tags loadtest without -short)")
 	}
@@ -578,14 +578,13 @@ func Test_Loadtest_PublisherSustains10kPerMinute(t *testing.T) {
 	}
 
 	// ---- Assertion 3: no loss past dedup ----
-	// A small slack absorbs the very last in-flight messages that
-	// might still be on the wire when drainTimeout expires. We allow
-	// up to 0.5% drop, which on a 10k-event run is 50 messages —
-	// enough cushion for runner jitter without hiding a real leak.
-	wantConsumed := res.published - res.published/200
-	if res.consumed < wantConsumed {
-		t.Errorf("consumed = %d, want >= %d (published = %d, drop budget = 0.5%%)",
-			res.consumed, wantConsumed, res.published)
+	// JetStream with FileStorage is lossless and the drain phase waits
+	// drainTimeout past the last publish, so every published event must
+	// be observed. Any drop here is a real leak worth failing on, not
+	// runner jitter.
+	if res.consumed < res.published {
+		t.Errorf("dropped %d messages: published=%d consumed=%d",
+			res.published-res.consumed, res.published, res.consumed)
 	}
 
 	// Sanity: the publisher path itself must not be erroring out
@@ -657,7 +656,3 @@ func dumpOneEnvelope(t *testing.T, js nats.JetStreamContext, subject string) {
 // the loadtest file is self-contained and can run without the integration
 // build tag's larger dependency set (anvil, ethclient).
 // ---------------------------------------------------------------------------
-
-// _ pins the fmt import so a developer adding diagnostic Printfs does
-// not have to remember to add the import. Cheap and obvious.
-var _ = fmt.Sprintf

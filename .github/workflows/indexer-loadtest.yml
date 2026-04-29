@@ -74,7 +74,7 @@ jobs:
           TITULAR_LOADTEST_DURATION: ${{ github.event.inputs.duration }}
         run: |
           go test -tags loadtest \
-            -run Test_Loadtest_PublisherSustains10kPerMinute \
+            -run Test_Loadtest_PublisherOnly_Sustains10kPerMinute \
             -count=1 \
             -timeout 10m \
             -v \
