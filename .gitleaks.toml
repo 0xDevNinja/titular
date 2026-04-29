@@ -19,4 +19,5 @@ regexes = [
 ]
 paths = [
   '''apps/web/e2e/fixtures/.*''',
+  '''services/indexer-go/internal/integration/anvil_test\.go''',
 ]
