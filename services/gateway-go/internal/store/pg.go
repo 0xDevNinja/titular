@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -50,6 +51,18 @@ func Connect(ctx context.Context, dsn string) (*PG, func(), error) {
 	if cfg.MaxConns < 4 {
 		cfg.MaxConns = 4
 	}
+	// OTel: every query / connect / acquire on the pool gets a span via
+	// otelpgx's pgx tracer. WithTrimSQLInSpanName drops the parameter
+	// list from the span name so the operation cardinality stays bounded
+	// (e.g. "pgx.query SELECT FROM agents" instead of one span name per
+	// distinct WHERE value). The full SQL still lands in db.statement
+	// for debugging, NOT user-supplied parameter values; we deliberately
+	// do NOT enable WithIncludeQueryParameters since that would land
+	// trader / agent_token addresses (and any future SIWE bind value)
+	// onto the trace.
+	cfg.ConnConfig.Tracer = otelpgx.NewTracer(
+		otelpgx.WithTrimSQLInSpanName(),
+	)
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect: %w", err)

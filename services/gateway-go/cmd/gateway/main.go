@@ -158,6 +158,7 @@ import (
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/graph"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/observability"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/openapi"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/router"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/sse"
@@ -174,6 +175,28 @@ func main() {
 
 	addr := envOr("GATEWAY_ADDR", ":8080")
 	service := envOr("GATEWAY_SERVICE", "gateway")
+
+	// OTel must come up BEFORE any subsystem that may emit a span
+	// (the pgx tracer is wired the moment the pool is built; the gin
+	// middleware reads otel.GetTracerProvider() per-request). Init is
+	// a no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset, so a gateway
+	// without observability still starts cleanly.
+	//
+	// Soft-fail posture: a flaky collector during deploy must NOT
+	// wedge gateway startup. We log the error and continue with the
+	// SDK left at no-op; operators who explicitly want hard-fail (e.g.
+	// CI runs that should refuse to ship unobserved) can set
+	// OTEL_FAIL_ON_INIT=1.
+	otelShutdown, err := observability.Init(context.Background(), observability.Config{
+		ServiceName: service,
+	})
+	if err != nil {
+		if os.Getenv("OTEL_FAIL_ON_INIT") == "1" {
+			log.Fatal().Err(err).Msg("failed to initialise observability")
+		}
+		log.Warn().Err(err).Msg("otel init failed (continuing)")
+		otelShutdown = func(context.Context) error { return nil }
+	}
 
 	agentHandlers, err := handlers.NewAgentHandlers()
 	if err != nil {
@@ -306,6 +329,16 @@ func main() {
 	// teardown.
 	if natsClose != nil {
 		natsClose()
+	}
+
+	// OTel shutdown last so any final spans / metrics emitted by the
+	// teardown above are flushed to the collector. The 10s internal
+	// cap inside the shutdown closure means a wedged collector cannot
+	// pin the process indefinitely on SIGTERM.
+	if otelShutdown != nil {
+		if err := otelShutdown(context.Background()); err != nil {
+			log.Warn().Err(err).Msg("otel shutdown")
+		}
 	}
 }
 

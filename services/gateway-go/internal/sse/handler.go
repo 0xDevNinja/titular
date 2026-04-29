@@ -13,6 +13,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Handler serves GET /events: a Server-Sent Events stream that
@@ -251,6 +255,26 @@ func (h *Handler) Stream(c *gin.Context) {
 	}
 	defer h.releaseConn(clientIP)
 
+	// Per-connection lifecycle span. Lives for the entire lifetime of
+	// the SSE connection (could be hours), so this span is the parent
+	// of any future per-event child spans. SpanKindServer is used
+	// because the gin inbound span (SpanKindServer) is what
+	// otel.GetTracerProvider hands us via the request context, and a
+	// nested SpanKindServer would be incorrect — we are NOT a separate
+	// server. Using a plain Internal kind because this span tracks the
+	// internal handler's lifecycle, not a transport-level event.
+	tracer := otel.Tracer("titular/gateway/sse")
+	streamCtx, streamSpan := tracer.Start(c.Request.Context(), "sse.stream",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.StringSlice("sse.subjects", []string(filter)),
+		),
+	)
+	defer streamSpan.End()
+	// Replace the request's context so child spans (replay, fanout)
+	// hang off the lifecycle span.
+	c.Request = c.Request.WithContext(streamCtx)
+
 	// Clear the per-response write deadline. The shared *http.Server
 	// sets WriteTimeout=30s for REST/GraphQL; that's the right posture
 	// for short responses but it would kill every long-lived SSE
@@ -341,6 +365,7 @@ func (h *Handler) Stream(c *gin.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			streamSpan.SetAttributes(attribute.String("sse.close_reason", "client disconnect"))
 			h.logSummary(sub, "client disconnect")
 			return
 		case ev, ok := <-sub.C:
@@ -351,10 +376,13 @@ func (h *Handler) Stream(c *gin.Context) {
 				// back up or returning 503.
 				writeComment(w, "server shutdown")
 				flusher.Flush()
+				streamSpan.SetAttributes(attribute.String("sse.close_reason", "multiplexer stopped"))
 				h.logSummary(sub, "multiplexer stopped")
 				return
 			}
 			if err := writeEvent(w, ev); err != nil {
+				streamSpan.SetStatus(codes.Error, "write error")
+				streamSpan.RecordError(err)
 				h.logSummary(sub, "write error: "+err.Error())
 				return
 			}

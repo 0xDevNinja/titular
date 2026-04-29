@@ -35,6 +35,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ErrUnknownEvent is returned by [Dispatch] when a log's topic0 has no
@@ -250,7 +254,28 @@ func DispatchAndHandle(ctx context.Context, log types.Log, handler Handler) (boo
 	case err != nil:
 		return false, err
 	}
+
+	// Per-event-decoder dispatch span. The span name carries the
+	// contract-qualified event name, which is bounded by the dispatch
+	// registry (one per registered abigen event), so it is safe as a
+	// span name without blowing up cardinality. Block / tx / log_index
+	// land as attributes for correlation. The handler runs WITHIN this
+	// span so a downstream NATS publish span (publisher.OnEvent) hangs
+	// off it as a child.
+	tracer := otel.Tracer("titular/indexer/decoder")
+	ctx, span := tracer.Start(ctx, "decoder.dispatch "+event.Name,
+		trace.WithAttributes(
+			attribute.String("titular.event.name", event.Name),
+			attribute.Int64("titular.block_number", int64(event.Raw.BlockNumber)),
+			attribute.String("titular.tx_hash", event.Raw.TxHash.Hex()),
+			attribute.Int("titular.log_index", int(event.Raw.Index)),
+		),
+	)
+	defer span.End()
+
 	if err := handler.OnEvent(ctx, event); err != nil {
+		span.SetStatus(codes.Error, "handler")
+		span.RecordError(err)
 		return false, fmt.Errorf("handler %s: %w", event.Name, err)
 	}
 	return true, nil

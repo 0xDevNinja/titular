@@ -26,12 +26,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"strconv"
 
 	"github.com/0xDevNinja/titular/services/indexer-go/internal/db"
+	"github.com/0xDevNinja/titular/services/indexer-go/internal/observability"
 )
 
 const usage = `migrate — apply or revert indexer-go Postgres migrations
@@ -76,6 +78,36 @@ func main() {
 		fmt.Fprintln(os.Stderr, "migrate: DATABASE_URL is not set")
 		os.Exit(1)
 	}
+
+	// OTel: wire up tracing if the operator has set
+	// OTEL_EXPORTER_OTLP_ENDPOINT, otherwise this is a no-op.
+	// Migrations are short-lived, but stitching their spans into a
+	// deploy trace lets operators see the boot DB sequence next to
+	// the application startup.
+	//
+	// Soft-fail posture: a flaky collector during deploy must NOT
+	// wedge schema migrations. We log the error and continue with the
+	// SDK left at no-op; operators who explicitly want the old
+	// hard-fail (e.g. CI runs that should refuse to ship unobserved)
+	// can set OTEL_FAIL_ON_INIT=1.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	otelShutdown, oerr := observability.Init(ctx, observability.Config{
+		ServiceName: "indexer-migrate",
+	})
+	if oerr != nil {
+		if os.Getenv("OTEL_FAIL_ON_INIT") == "1" {
+			fmt.Fprintf(os.Stderr, "migrate: observability init: %v\n", oerr)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "migrate: warn: otel init failed (continuing): %v\n", oerr)
+		otelShutdown = func(context.Context) error { return nil }
+	}
+	defer func() {
+		if err := otelShutdown(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "migrate: observability shutdown: %v\n", err)
+		}
+	}()
 
 	code := run(args, dsn, os.Getenv, os.Stdout, os.Stderr)
 	os.Exit(code)
