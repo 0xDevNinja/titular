@@ -49,12 +49,36 @@ K6_TARGET_RPS=250 K6_DURATION=30s docker compose up \
 Variables consumed by the compose file (and ultimately by `script.js`
 and `scenarios.js`):
 
-| Variable          | Default | Purpose                                           |
-| ----------------- | ------- | ------------------------------------------------- |
-| `K6_TARGET_RPS`   | `1000`  | Sustained request rate per second.                |
-| `K6_DURATION`     | `60s`   | Sustain window (Go duration accepted by k6).      |
-| `K6_VUS`          | `200`   | Initial size of the VU pool.                      |
-| `K6_AGENT_MAX_ID` | `100`   | Upper bound for the by-id scenario's PK range.    |
+| Variable          | Default | Purpose                                                       |
+| ----------------- | ------- | ------------------------------------------------------------- |
+| `K6_TARGET_RPS`   | `1000`  | Sustained request rate per second during the hold stage.      |
+| `K6_WARMUP`       | `30s`   | Ramp window from 0 RPS to `K6_TARGET_RPS` before the hold.    |
+| `K6_DURATION`     | `60s`   | Steady-state hold window (Go duration accepted by k6).        |
+| `K6_VUS`          | `200`   | Initial size of the VU pool.                                  |
+| `K6_AGENT_MAX_ID` | `100`   | Upper bound for the by-id scenario's PK range.                |
+
+### Warmup convention
+
+Each scenario runs as a `ramping-arrival-rate` executor with two
+stages:
+
+1. **Warmup** — ramp `0 -> K6_TARGET_RPS` over `K6_WARMUP` (default
+   30s). The first ~5s of any cold run is dominated by `go run`
+   compile cost, JIT-warming the request pipeline, and Postgres
+   priming its plan cache; ramping in keeps those samples out of the
+   steady-state percentiles.
+2. **Hold** — sustain `K6_TARGET_RPS` for `K6_DURATION` (default
+   60s). This is the window the SLO is asserted over.
+
+Threshold `delayAbortEval` is aligned to `K6_WARMUP` so the abort-on-
+fail wiring does not fire during the ramp. The `http_reqs` rate
+threshold is set to 80% of `K6_TARGET_RPS` because the global rate is
+averaged over the *entire* run (warmup + hold); at 30s+60s the mean
+is ~83% of target.
+
+Set `K6_WARMUP=0s` to disable the ramp (useful when driving a
+pre-warmed gateway from an external runner; not recommended for the
+docker-compose path where the gateway is freshly compiled).
 
 ## Run against an existing gateway
 

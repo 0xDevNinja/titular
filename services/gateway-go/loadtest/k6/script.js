@@ -29,20 +29,28 @@
 //                      With http_req_duration around 50ms, 200 VUs is
 //                      sufficient headroom to sustain >=1k RPS without
 //                      starving the request rate executor.
-//   K6_DURATION        default "60s"; sustain window for the SLO check.
-//                      Shorter values are useful for smoke runs; the
-//                      SLO assertion is meaningful only at >=30s.
-//   K6_TARGET_RPS      default 1000; desired sustained request rate.
-//                      Drives the constant-arrival-rate executor and
-//                      the http_reqs threshold.
+//   K6_DURATION        default "60s"; steady-state hold window for the
+//                      SLO check (after warmup). Shorter values are
+//                      useful for smoke runs; the SLO assertion is
+//                      meaningful only at >=30s of hold.
+//   K6_WARMUP          default "30s"; ramp window from 0 RPS to target
+//                      before the steady-state hold begins. Threshold
+//                      abort is delayed by the same value so first-
+//                      iteration / plan-cache priming samples don't
+//                      fail the run.
+//   K6_TARGET_RPS      default 1000; desired sustained request rate
+//                      during the hold stage. Drives the ramping-
+//                      arrival-rate executor and the http_reqs
+//                      threshold.
 //   K6_AGENT_MAX_ID    default 100; upper bound on the agent primary
 //                      key range used by the by-id scenario. The seed
 //                      script populates exactly this many rows.
 //
-// Why constant-arrival-rate over per-VU iteration: we want the load
+// Why ramping-arrival-rate over per-VU iteration: we want the load
 // generator to push a *fixed RPS* even if the server slows down, so a
 // regression in latency is allowed to surface as a queueing backlog
-// rather than as silent throughput loss.
+// rather than as silent throughput loss. The ramp prefix keeps cold-
+// start samples (compile, plan cache) out of the steady-state p(99).
 
 import { check } from "k6";
 import http from "k6/http";
