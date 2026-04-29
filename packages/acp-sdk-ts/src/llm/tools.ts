@@ -168,6 +168,8 @@ const CREATE_JOB_TOOL: ToolDefinition = {
   },
 };
 
+// TODO(M5): add tools for AcpAgent.acceptJob, submitResult, release once those
+// methods land on the agent surface (issue #96 deferred per acpAgent scope).
 const ALL_TOOLS: readonly ToolDefinition[] = Object.freeze([
   REGISTER_TOOL,
   BROWSE_TOOL,

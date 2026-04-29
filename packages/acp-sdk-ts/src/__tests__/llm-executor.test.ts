@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AcpAgent } from "../agent.js";
 import { AcpError } from "../errors.js";
-import { TOOL_NAMES, executeTool } from "../llm/executor.js";
+import { executeTool } from "../llm/executor.js";
+import { TOOL_NAMES } from "../llm/tools.js";
 import type { ToolCall } from "../llm/types.js";
 import {
   type CreateJobResult,

@@ -23,7 +23,7 @@ import {
   JobType,
   type RegisterParams,
 } from "../types.js";
-import { TOOL_NAMES, type ToolName } from "./tools.js";
+import { TOOL_NAMES } from "./tools.js";
 import type { ToolCall, ToolResult } from "./types.js";
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -213,7 +213,3 @@ function errorResult(call: ToolCall, name: string, code: string, message: string
     isError: true,
   };
 }
-
-/** Re-export so callers don't have to know the dispatch table layout. */
-export { TOOL_NAMES };
-export type { ToolName };

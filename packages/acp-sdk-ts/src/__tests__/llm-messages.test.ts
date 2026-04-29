@@ -54,7 +54,7 @@ describe("toMessages", () => {
   });
 
   it("emits a JSON state turn when agents are present", () => {
-    const messages = toMessages({ agents: [AGENT_A] });
+    const messages = toMessages({ agents: [AGENT_A] }, { redactAddresses: false });
     expect(messages).toHaveLength(2);
     expect(messages[1]?.role).toBe("user");
     const content = (messages[1] as { content: string }).content;
@@ -74,7 +74,7 @@ describe("toMessages", () => {
   });
 
   it("emits jobs in the JSON payload", () => {
-    const messages = toMessages({ jobs: [JOB_A] });
+    const messages = toMessages({ jobs: [JOB_A] }, { redactAddresses: false });
     expect(messages).toHaveLength(2);
     const json = extractJson((messages[1] as { content: string }).content);
     expect(json.jobs).toHaveLength(1);
@@ -166,6 +166,58 @@ describe("toMessages", () => {
     const json = extractJson((messages[1] as { content: string }).content);
     expect(json.jobs[0]?.clone_address).toBeUndefined();
     expect(json.jobs[0]?.result_uri).toBeUndefined();
+  });
+
+  it("redacts controller + principal addresses by default", () => {
+    const messages = toMessages({ agents: [AGENT_A], jobs: [JOB_A] });
+    const json = extractJson((messages[1] as { content: string }).content);
+
+    const controller = json.agents[0]?.controller as string | undefined;
+    const principal = json.jobs[0]?.principal as string | undefined;
+
+    // Raw hex addresses MUST NOT appear under the default privacy contract.
+    expect(controller).not.toBe(AGENT_A.controller);
+    expect(principal).not.toBe(JOB_A.principal);
+
+    // Both should be tokenized to the deterministic short form.
+    expect(controller).toMatch(/^addr_[0-9a-f]{8}$/);
+    expect(principal).toMatch(/^addr_[0-9a-f]{8}$/);
+
+    // Public protocol fields MUST still flow through unchanged.
+    expect(json.jobs[0]?.token).toBe(JOB_A.token);
+    expect(json.jobs[0]?.clone_address).toBe(JOB_A.clone_address);
+  });
+
+  it("preserves identity equality across messages when redacted", () => {
+    // Same wallet appears as both controller (agent) and principal (job).
+    const sharedAddr = "0xabababababababababababababababababababab";
+    const agent: Agent = { ...AGENT_A, controller: sharedAddr };
+    const job: Job = { ...JOB_A, principal: sharedAddr };
+
+    const messages = toMessages({ agents: [agent], jobs: [job] });
+    const json = extractJson((messages[1] as { content: string }).content);
+
+    const controller = json.agents[0]?.controller as string;
+    const principal = json.jobs[0]?.principal as string;
+
+    expect(controller).toBeDefined();
+    expect(controller).toBe(principal);
+
+    // Checksum-cased input collides to the same token (case-insensitive).
+    const checksumAgent: Agent = {
+      ...AGENT_A,
+      controller: `0x${sharedAddr.slice(2).toUpperCase()}` as `0x${string}`,
+    };
+    const messages2 = toMessages({ agents: [checksumAgent] });
+    const json2 = extractJson((messages2[1] as { content: string }).content);
+    expect(json2.agents[0]?.controller).toBe(controller);
+  });
+
+  it("leaves addresses intact when redactAddresses is false", () => {
+    const messages = toMessages({ agents: [AGENT_A], jobs: [JOB_A] }, { redactAddresses: false });
+    const json = extractJson((messages[1] as { content: string }).content);
+    expect(json.agents[0]?.controller).toBe(AGENT_A.controller);
+    expect(json.jobs[0]?.principal).toBe(JOB_A.principal);
   });
 });
 

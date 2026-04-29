@@ -8,6 +8,12 @@ describe("availableTools", () => {
     expect(names).toEqual([TOOL_NAMES.browse, TOOL_NAMES.createJob, TOOL_NAMES.register].sort());
   });
 
+  it("schema is stable", () => {
+    // Snapshot guards the model-facing tool surface against accidental drift.
+    // Reviewer ack required to update (`pnpm test --update`).
+    expect(availableTools()).toMatchSnapshot();
+  });
+
   it("emits OpenAI-shaped envelopes", () => {
     for (const tool of availableTools()) {
       expect(tool.type).toBe("function");
