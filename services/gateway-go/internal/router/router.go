@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/auth"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
 )
@@ -41,12 +42,18 @@ import (
 // c.ClientIP() falls back to c.Request.RemoteAddr, which is unspoofable.
 // Operators running behind a known L7 proxy MUST set this explicitly via
 // GATEWAY_TRUSTED_PROXIES.
+//
+// Auth, when non-nil, is the SIWE auth handler bundle. The router mounts
+// /auth/siwe/nonce, /auth/siwe/verify and /auth/logout when present. When
+// nil, the auth endpoints are simply absent — useful in tests that don't
+// want to spin up Redis.
 type Config struct {
 	Logger         zerolog.Logger
 	Service        string
 	CORS           middleware.CORSConfig
 	RateLimit      middleware.RateLimitConfig
 	TrustedProxies []string
+	Auth           *auth.Handlers
 }
 
 // DefaultConfig returns a Config suitable for local development.
@@ -164,6 +171,17 @@ func NewWithConfigLifecycle(
 		c.Header("Content-Type", "application/json; charset=utf-8")
 		c.String(http.StatusOK, `{"status":"ok"}`)
 	})
+
+	// SIWE auth — mounted before /v1 so the routes can never be accidentally
+	// shadowed by a /v1/* catch-all. The /auth group inherits the rate
+	// limiter (#86 OWASP gate) but, by design, NOT RequireAuth — the verify
+	// endpoint is what bootstraps the session in the first place.
+	if cfg.Auth != nil {
+		authGroup := engine.Group("/auth")
+		authGroup.POST("/siwe/nonce", cfg.Auth.Nonce)
+		authGroup.POST("/siwe/verify", cfg.Auth.Verify)
+		authGroup.POST("/logout", cfg.Auth.Logout)
+	}
 
 	// Mount chi for the legacy /v1 fixture endpoints. We bind under a
 	// catch-all so chi sees the full path, and route inside chi exactly as
