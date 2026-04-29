@@ -46,6 +46,12 @@
 //	                              this enables the /auth/siws/* endpoints
 //	                              (provided JWT_SECRET + REDIS_URL are also
 //	                              set).
+//	GATEWAY_DATABASE_URL          read-only Postgres DSN
+//	                              (postgres://user:pw@host:port/db). When
+//	                              set, the gateway opens a pgx pool and
+//	                              mounts the M4 read-only REST endpoints
+//	                              under /api/v1. When unset, /api/v1 is
+//	                              not mounted.
 package main
 
 import (
@@ -70,6 +76,7 @@ import (
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/router"
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/store"
 )
 
 func main() {
@@ -104,6 +111,11 @@ func main() {
 		log.Fatal().Err(err).Msg("invalid SIWS configuration")
 	}
 
+	apiHandlers, dbClose, err := buildAPIHandlers(context.Background())
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid database configuration")
+	}
+
 	cfg := router.Config{
 		Logger:         log.Logger,
 		Service:        service,
@@ -112,6 +124,7 @@ func main() {
 		TrustedProxies: parseList(os.Getenv("GATEWAY_TRUSTED_PROXIES")),
 		Auth:           authHandlers,
 		SIWS:           siwsHandlers,
+		API:            apiHandlers,
 	}
 
 	built := router.NewWithConfigLifecycle(cfg, agentHandlers, jobHandlers)
@@ -157,6 +170,28 @@ func main() {
 			log.Warn().Err(err).Msg("redis close")
 		}
 	}
+
+	// Close the Postgres pool we own. Same ownership rule as Redis above.
+	if dbClose != nil {
+		dbClose()
+	}
+}
+
+// buildAPIHandlers opens a Postgres pool from GATEWAY_DATABASE_URL and wires
+// it into the read-only REST API. Returns (nil, nil, nil) when the env var is
+// unset — the M4 endpoints are simply not mounted in that case, which keeps
+// the binary usable in dev environments without a database (M2/M3 fixture
+// surface still works).
+func buildAPIHandlers(ctx context.Context) (*handlers.API, func(), error) {
+	dsn := strings.TrimSpace(os.Getenv("GATEWAY_DATABASE_URL"))
+	if dsn == "" {
+		return nil, nil, nil
+	}
+	pg, closeFn, err := store.Connect(ctx, dsn)
+	if err != nil {
+		return nil, nil, err
+	}
+	return handlers.NewAPI(pg), closeFn, nil
 }
 
 // buildAuthHandlers parses the SIWE/JWT/Redis env knobs and returns either a

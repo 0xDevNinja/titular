@@ -38,6 +38,7 @@ flags:
 | `GATEWAY_SIWE_CHAIN_ID` | The chain id the SIWE message MUST declare. Defaults to `84532` (Base Sepolia). |
 | `GATEWAY_SIWS_DOMAIN` | The value the SIWS (Sign-In With Solana) message MUST declare. Falls back to `GATEWAY_SIWE_DOMAIN` when unset so single-domain deployments configure once. |
 | `GATEWAY_SIWS_CLUSTER` | Solana cluster the SIWS message MUST declare. One of `devnet`, `mainnet-beta`, `testnet`. Setting this enables `/auth/siws/*`. No default — operators must opt in explicitly. |
+| `GATEWAY_DATABASE_URL` | Read-only Postgres DSN (`postgres://user:pw@host:port/db`). Setting this enables the M4 read-only REST API under `/api/v1`. Unset disables the API; the binary still serves the M2/M3 fixture surface. |
 
 ### SIWE auth (`/auth/*`)
 
@@ -75,6 +76,26 @@ field naming a Solana network instead of an EVM chain id; the handler accepts
 either field name. Phantom and Backpack clients can be wired in directly: their
 `signMessage` returns base58, which is the format the verify endpoint
 expects.
+
+### Read-only REST API (`/api/v1/*`)
+
+When `GATEWAY_DATABASE_URL` is set the gateway opens a pgx connection pool and
+mounts a small read-only API for indexer-derived state:
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/v1/agents?cursor=&limit=&kind=` | Paginated agent list. `kind` filters to `launchpad` or `acp`. |
+| `GET /api/v1/agents/:id` | Lookup by primary key OR by `kind:agent_id` slug (e.g. `acp:42`). |
+| `GET /api/v1/trades?agent_token=&from=&to=&cursor=&limit=` | Paginated trade list. `agent_token` is a 0x-prefixed 20-byte hex address; `from` / `to` are RFC 3339 timestamps. |
+| `GET /api/v1/jobs?status=&cursor=&limit=` | Paginated job list. `status` is one of `created`, `funded`, `active`, `completed`, `cancelled`, `disputed`, `released`, `resolved`. |
+| `GET /api/v1/stats` | Aggregate counts plus `last_block_indexed`. |
+
+Pagination is opaque-cursor based: pass `next_cursor` from the previous
+response back as `cursor`. Limits default to 50 and are capped at 200; values
+outside `[1, 200]` return 400. Unknown query parameters return 400 to surface
+client typos. The endpoints are read-only and live outside the SIWE wall —
+deployments that want them gated should wrap the group in
+`auth.RequireAuth(cfg.Auth)`.
 
 ### `GATEWAY_TRUSTED_PROXIES` — required when behind an L7 proxy
 
