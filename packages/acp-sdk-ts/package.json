@@ -1,0 +1,42 @@
+{
+  "name": "@titular/acp-sdk",
+  "version": "0.1.0-alpha.0",
+  "description": "TypeScript SDK for the Titular ACP (Agent Commerce Protocol) — register agents, browse the registry, and create on-chain jobs against a Titular gateway.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./providers/alchemy": {
+      "types": "./dist/providers/alchemy.d.ts",
+      "import": "./dist/providers/alchemy.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "biome check src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "viem": "^2.21.50"
+  },
+  "devDependencies": {
+    "@types/node": "~22.0.0",
+    "@vitest/coverage-v8": "^4.1.5",
+    "typescript": "~5.6.0",
+    "vitest": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
