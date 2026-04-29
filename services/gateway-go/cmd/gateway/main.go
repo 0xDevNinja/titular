@@ -73,6 +73,13 @@
 //	                              before they reach the executor.
 //	                              Default 10; introspection queries
 //	                              (__schema / __type) bypass the cap.
+//	GATEWAY_SSE_MAX_PER_IP        non-negative integer; caps the number
+//	                              of concurrent /events connections a
+//	                              single client IP may hold. Default 10;
+//	                              0 falls back to the default; setting
+//	                              to a negative number disables the
+//	                              cap (intended for trusted networks
+//	                              and tests only).
 package main
 
 import (
@@ -366,10 +373,17 @@ func buildSSEHandler(natsConn *nats.Conn) (*sse.Handler, func(), error) {
 		js = nil
 	}
 
+	// MaxPerIP: 0 in HandlerConfig means "use the package default";
+	// strconv.Atoi returns 0 for an unset env var, which is exactly the
+	// fallthrough we want. Operators wanting to disable the cap pass a
+	// negative integer explicitly.
+	maxPerIP, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("GATEWAY_SSE_MAX_PER_IP")))
+
 	h, err := sse.NewHandler(sse.HandlerConfig{
 		Multiplexer: mux,
 		JetStream:   js,
 		Logger:      log.Logger,
+		MaxPerIP:    maxPerIP,
 	})
 	if err != nil {
 		mux.Stop()

@@ -393,6 +393,70 @@ func Test_SubjectsFromCSV(t *testing.T) {
 	}
 }
 
+// TestSubjectsFromCSV_RejectsGreaterThan asserts the parser refuses a
+// bare `>` pattern. A leading `>` would let a client subscribe across
+// every prefix the multiplexer holds, which defeats the closed-set
+// posture documented on SubjectPrefixes.
+func TestSubjectsFromCSV_RejectsGreaterThan(t *testing.T) {
+	if got := SubjectsFromCSV(">"); got != nil {
+		t.Errorf("SubjectsFromCSV(\">\") = %v, want nil (rejected)", got)
+	}
+	if _, err := ParseSubjectsCSV(">"); err == nil {
+		t.Error("ParseSubjectsCSV(\">\"): expected error, got nil")
+	}
+	// The reject must propagate even when mixed with a valid pattern:
+	// silently dropping the bad entry would let a client think the
+	// remaining narrow filter is being honoured while the broad one
+	// is quietly tossed.
+	if got := SubjectsFromCSV(">,trades.*"); got != nil {
+		t.Errorf("SubjectsFromCSV(\">,trades.*\") = %v, want nil", got)
+	}
+}
+
+// TestSubjectsFromCSV_RejectsBareStar asserts the parser refuses a
+// leading `*`. `*` matches any single token, so `*` alone or
+// `*.bought` would let a client cross the registered-prefix boundary
+// (e.g. fan an `attacker.>` test subject if one were ever published).
+func TestSubjectsFromCSV_RejectsBareStar(t *testing.T) {
+	if got := SubjectsFromCSV("*"); got != nil {
+		t.Errorf("SubjectsFromCSV(\"*\") = %v, want nil", got)
+	}
+	if got := SubjectsFromCSV("*.bought"); got != nil {
+		t.Errorf("SubjectsFromCSV(\"*.bought\") = %v, want nil", got)
+	}
+	if _, err := ParseSubjectsCSV("*.bought"); err == nil {
+		t.Error("ParseSubjectsCSV(\"*.bought\"): expected error, got nil")
+	}
+}
+
+// TestSubjectsFromCSV_AllowsPrefixWildcard locks in that `*` and `>`
+// remain legal within a registered prefix; the validation only
+// rejects patterns whose FIRST token is the wildcard.
+func TestSubjectsFromCSV_AllowsPrefixWildcard(t *testing.T) {
+	cases := []struct {
+		in   string
+		want Filter
+	}{
+		{"agents.*", Filter{"agents.*"}},
+		{"trades.>", Filter{"trades.>"}},
+		{"jobs.*,tokens.>", Filter{"jobs.*", "tokens.>"}},
+		{"agents.registered", Filter{"agents.registered"}},
+	}
+	for _, tc := range cases {
+		got := SubjectsFromCSV(tc.in)
+		if len(got) != len(tc.want) {
+			t.Errorf("SubjectsFromCSV(%q) = %v, want %v", tc.in, got, tc.want)
+			continue
+		}
+		for i, p := range got {
+			if p != tc.want[i] {
+				t.Errorf("SubjectsFromCSV(%q)[%d] = %q, want %q",
+					tc.in, i, p, tc.want[i])
+			}
+		}
+	}
+}
+
 // Test_parseJetStreamID covers the Last-Event-ID parser for the canonical
 // js:<seq> shape and the rejected forms.
 func Test_parseJetStreamID(t *testing.T) {

@@ -535,6 +535,13 @@ func safeClose(ch chan Event) {
 // empty input so a missing/blank ?subjects= query parameter is
 // indistinguishable from an unfiltered subscription. Reused by the
 // handler layer.
+//
+// Patterns whose FIRST token is `>` or `*` are rejected: they would
+// let a client subscribe across every registered prefix (or worse,
+// every subject NATS knows about) regardless of the multiplexer's
+// closed-set posture. The handler maps those rejections to 400; the
+// request never reaches the live tail. Patterns that narrow within a
+// known prefix (e.g. `agents.*`, `trades.>`) are preserved unchanged.
 func SubjectsFromCSV(s string) Filter {
 	if strings.TrimSpace(s) == "" {
 		return nil
@@ -546,11 +553,87 @@ func SubjectsFromCSV(s string) Filter {
 		if p == "" {
 			continue
 		}
+		if err := validateSubjectPattern(p, SubjectPrefixes); err != nil {
+			// One bad pattern poisons the whole list. The alternative
+			// (silently dropping it) would let a client think a broad
+			// `>` is being honoured and miss the more specific entries
+			// they typed alongside it; explicit rejection is safer.
+			return nil
+		}
 		out = append(out, p)
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+// ParseSubjectsCSV is the validating parser the SSE handler calls so
+// it can return a 400 rather than silently falling back to the
+// unfiltered tail when the client sent a banned pattern. Returns
+// (nil, nil) for blank input — same "no filter" semantic as
+// SubjectsFromCSV — and (nil, err) for any rejected pattern.
+func ParseSubjectsCSV(s string) (Filter, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	parts := strings.Split(s, ",")
+	out := make(Filter, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if err := validateSubjectPattern(p, SubjectPrefixes); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+// validateSubjectPattern rejects subject patterns that would let a
+// client opt out of the multiplexer's closed-set fanout. The rule is
+// narrow: the FIRST token must not be a wildcard. Once the first token
+// is a literal that matches one of the registered prefixes (agents,
+// jobs, tokens, trades), the pattern is allowed to use `*` and `>` for
+// further narrowing.
+//
+// allowedPrefixes is the registered top-level prefix list (i.e.
+// SubjectPrefixes); we extract the leading token of each entry and
+// compare against the pattern's leading token. Passing nil disables
+// the prefix check (allows any non-wildcard leading token), which is
+// only useful for unit tests.
+func validateSubjectPattern(pattern string, allowedPrefixes []string) error {
+	if pattern == "" {
+		return errors.New("sse: empty subject pattern")
+	}
+	first := pattern
+	if idx := strings.Index(pattern, "."); idx >= 0 {
+		first = pattern[:idx]
+	}
+	switch first {
+	case ">":
+		return errors.New("sse: bare `>` not allowed; subscribe within a registered prefix")
+	case "*":
+		return errors.New("sse: leading `*` not allowed; subscribe within a registered prefix")
+	}
+	if len(allowedPrefixes) == 0 {
+		return nil
+	}
+	for _, prefix := range allowedPrefixes {
+		// Leading token of each registered prefix (e.g. "agents.>" -> "agents").
+		head := prefix
+		if idx := strings.Index(prefix, "."); idx >= 0 {
+			head = prefix[:idx]
+		}
+		if head == first {
+			return nil
+		}
+	}
+	return errors.New("sse: pattern leading token does not match any registered prefix")
 }
 

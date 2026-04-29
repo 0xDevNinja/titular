@@ -21,7 +21,8 @@ import (
 // in-process httptest server. Returns the engine, the live NATS
 // connection (so individual tests can publish on it), and the
 // multiplexer (so tests can introspect subscriber state and trigger
-// shutdown).
+// shutdown). Per-IP cap is disabled so the test surface mirrors the
+// pre-#90 baseline; the cap has its own dedicated test below.
 func newTestRouter(t *testing.T, hbInterval time.Duration) (*gin.Engine, *nats.Conn, *Multiplexer) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -41,6 +42,10 @@ func newTestRouter(t *testing.T, hbInterval time.Duration) (*gin.Engine, *nats.C
 		Multiplexer:       mux,
 		JetStream:         js,
 		HeartbeatInterval: hbInterval,
+		// Disable the per-IP cap for unrelated tests; every connection
+		// in the in-process httptest server resolves to 127.0.0.1, so
+		// otherwise the cap would skew the disconnect/replay assertions.
+		MaxPerIP: -1,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
@@ -415,4 +420,103 @@ func waitForSubscribers(t *testing.T, m *Multiplexer, n int) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("waitForSubscribers: only saw %d (want %d)", subscriberCount(m), n)
+}
+
+// TestSSE_RejectsExcessConcurrentConnectionsPerIP opens MaxPerIP
+// concurrent /events streams from the same IP and asserts the
+// (MaxPerIP+1)th request gets a 429 with Retry-After: 5. Defends the
+// memory-pinning attack where a single client opens hundreds of
+// long-lived streams to chew up gateway buffers.
+func TestSSE_RejectsExcessConcurrentConnectionsPerIP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	nc := runEmbeddedNATS(t)
+
+	mux, err := NewMultiplexer(Config{NATS: nc})
+	if err != nil {
+		t.Fatalf("NewMultiplexer: %v", err)
+	}
+	if err := mux.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(mux.Stop)
+
+	const maxPerIP = 10
+	js, _ := nc.JetStream()
+	h, err := NewHandler(HandlerConfig{
+		Multiplexer:       mux,
+		JetStream:         js,
+		HeartbeatInterval: time.Hour,
+		MaxPerIP:          maxPerIP,
+	})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	engine := gin.New()
+	// Trust the loopback proxy so c.ClientIP() resolves to the test
+	// connection's source ip (127.0.0.1) rather than any forwarded
+	// value. Without trusted proxies set, gin still returns the remote
+	// address — fine here too — but we pin it explicitly so the test
+	// is independent of gin's default trust posture.
+	_ = engine.SetTrustedProxies(nil)
+	h.Register(engine.Group(""))
+
+	srv := httptest.NewServer(engine)
+	defer srv.Close()
+
+	// Open `maxPerIP` connections in parallel; each must succeed. We
+	// hold a context per connection so the goroutines stay parked on
+	// the stream until the test's defer cancels them — releasing the
+	// per-IP slot would invalidate the (maxPerIP+1)th-must-fail
+	// assertion.
+	holds := make([]context.CancelFunc, 0, maxPerIP)
+	defer func() {
+		for _, c := range holds {
+			c()
+		}
+	}()
+
+	for i := 0; i < maxPerIP; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		holds = append(holds, cancel)
+
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/events", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("connection %d: Do: %v", i, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("connection %d: status %d, want 200", i, resp.StatusCode)
+		}
+		// Drain the initial heartbeat so we KNOW the handler reached
+		// the per-IP register step before we open the next connection;
+		// otherwise the (maxPerIP+1)th request can race ahead of
+		// acquireConn and erroneously succeed.
+		r := bufio.NewReader(resp.Body)
+		if _, err := readSSEFrame(r); err != nil {
+			t.Fatalf("connection %d: read initial heartbeat: %v", i, err)
+		}
+		// Don't close the body — we want the connection to stay open.
+		// resp.Body is closed indirectly when ctx is cancelled above.
+		_ = resp
+	}
+
+	// Wait until the multiplexer sees maxPerIP subscribers so we know
+	// every prior connection has fully registered, not just acquired
+	// the per-IP slot.
+	waitForSubscribers(t, mux, maxPerIP)
+
+	// (maxPerIP+1)th request from the same source must be refused.
+	resp, err := http.Get(srv.URL + "/events")
+	if err != nil {
+		t.Fatalf("(maxPerIP+1)th GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("(maxPerIP+1)th status: got %d, want 429", resp.StatusCode)
+	}
+	if ra := resp.Header.Get("Retry-After"); ra != "5" {
+		t.Errorf("(maxPerIP+1)th Retry-After: got %q, want \"5\"", ra)
+	}
 }

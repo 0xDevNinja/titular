@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -59,12 +60,29 @@ import (
 // Each connection owns a bounded sse.Subscriber buffer (DefaultBufferSize).
 // The hub drops on overflow; the handler logs the running drop count
 // when the connection terminates so a slow client surfaces in metrics.
+//
+// # Per-IP connection cap
+//
+// A single client opening N concurrent SSE connections is the cheapest
+// way to pin gateway memory: each connection holds a 64-event buffer,
+// a goroutine, and a NATS subscriber slot. The handler refuses new
+// /events connections from an IP once that IP already has MaxPerIP
+// connections open; the rejection is a 429 with Retry-After: 5 so the
+// client backs off rather than hot-looping. Defaults to 10 per IP and
+// is configurable via HandlerConfig.MaxPerIP (cmd/gateway reads
+// GATEWAY_SSE_MAX_PER_IP and forwards). Setting MaxPerIP <= 0 disables
+// the cap, which is appropriate for tests and tightly-trusted internal
+// deployments only.
 type Handler struct {
 	mux              *Multiplexer
 	js               nats.JetStreamContext
 	heartbeatInterval time.Duration
 	logger           zerolog.Logger
 	now              func() time.Time
+
+	maxPerIP int
+	connsMu  sync.Mutex
+	conns    map[string]int
 }
 
 // HandlerConfig wires the handler.
@@ -83,6 +101,12 @@ type HandlerConfig struct {
 
 	// Logger receives drop / error log lines. Zero uses zerolog.Nop().
 	Logger zerolog.Logger
+
+	// MaxPerIP caps concurrent /events connections from a single
+	// client IP. Zero falls back to DefaultMaxPerIP; explicitly setting
+	// a negative value disables the cap (intended for tests and
+	// trusted-network deployments only).
+	MaxPerIP int
 }
 
 // DefaultHeartbeatInterval is the heartbeat cadence specified by #90 —
@@ -91,6 +115,13 @@ type HandlerConfig struct {
 // nginx is 60s). Operators who terminate at a more aggressive proxy
 // can lower this via HandlerConfig.
 const DefaultHeartbeatInterval = 30 * time.Second
+
+// DefaultMaxPerIP caps concurrent SSE connections per source IP at 10.
+// Sized to allow a normal browsing session (a small handful of tabs)
+// while refusing the cheap memory-pinning attack of a single IP
+// holding hundreds of streams. Operators behind a known L7 proxy with
+// trusted-IP forwarding may raise this via GATEWAY_SSE_MAX_PER_IP.
+const DefaultMaxPerIP = 10
 
 // NewHandler validates cfg and returns a configured Handler. Returns an
 // error when required fields are missing — silent zero-config would let
@@ -108,12 +139,23 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 		logger = zerolog.Nop()
 	}
 	logger = logger.With().Str("component", "sse_handler").Logger()
+
+	// Zero falls back to the default; a negative value is the explicit
+	// "disable cap" signal so tests can opt out without depending on
+	// magic numbers in env.
+	maxPerIP := cfg.MaxPerIP
+	if maxPerIP == 0 {
+		maxPerIP = DefaultMaxPerIP
+	}
+
 	return &Handler{
 		mux:               cfg.Multiplexer,
 		js:                cfg.JetStream,
 		heartbeatInterval: hb,
 		logger:            logger,
 		now:               time.Now,
+		maxPerIP:          maxPerIP,
+		conns:             make(map[string]int),
 	}, nil
 }
 
@@ -123,6 +165,42 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 // the rest of the surface.
 func (h *Handler) Register(rg *gin.RouterGroup) {
 	rg.GET("/events", h.Stream)
+}
+
+// acquireConn reserves a per-IP slot, returning false when the cap is
+// already at the configured ceiling. ip == "" or maxPerIP <= 0 short-
+// circuits to true: an empty IP usually signals unkeyable transport
+// (test recorder, unix socket) where the cap is meaningless, and a
+// non-positive cap is the explicit opt-out.
+func (h *Handler) acquireConn(ip string) bool {
+	if ip == "" || h.maxPerIP <= 0 {
+		return true
+	}
+	h.connsMu.Lock()
+	defer h.connsMu.Unlock()
+	if h.conns[ip] >= h.maxPerIP {
+		return false
+	}
+	h.conns[ip]++
+	return true
+}
+
+// releaseConn drops a per-IP slot. Mirrors the acquireConn guards so
+// release-without-acquire is a no-op rather than a counter underflow.
+// Removes the map entry once the count returns to zero so an IP that
+// connects once and disconnects doesn't permanently inflate the map.
+func (h *Handler) releaseConn(ip string) {
+	if ip == "" || h.maxPerIP <= 0 {
+		return
+	}
+	h.connsMu.Lock()
+	defer h.connsMu.Unlock()
+	n := h.conns[ip]
+	if n <= 1 {
+		delete(h.conns, ip)
+		return
+	}
+	h.conns[ip] = n - 1
 }
 
 // Stream is the GET /events handler. It runs for the lifetime of the
@@ -144,7 +222,54 @@ func (h *Handler) Stream(c *gin.Context) {
 		return
 	}
 
-	filter := SubjectsFromCSV(c.Query("subjects"))
+	// Validate the subject filter BEFORE writing any response headers
+	// so a bad pattern can be rejected with a 400 rather than swallowed
+	// into the stream. The rule is narrow: a leading `>` or `*` would
+	// fan every subject the multiplexer could ever see (or worse, every
+	// subject NATS knows about) past the closed-prefix posture, so we
+	// refuse those. Patterns that narrow within a registered prefix
+	// (e.g. `agents.*`, `trades.>`) are accepted as-is.
+	filter, err := ParseSubjectsCSV(c.Query("subjects"))
+	if err != nil {
+		c.Header("Content-Type", "application/json; charset=utf-8")
+		c.String(http.StatusBadRequest, `{"error":{"code":"invalid_subjects","message":"subjects parameter contains a disallowed wildcard"}}`)
+		return
+	}
+
+	// Per-IP concurrent connection cap. A 429 with Retry-After: 5
+	// tells the EventSource client to back off rather than reconnect
+	// immediately. We register BEFORE any response bytes are written
+	// so the body of a refused request stays a plain 429; the
+	// corresponding deferred release must always fire even on early
+	// returns below.
+	clientIP := c.ClientIP()
+	if !h.acquireConn(clientIP) {
+		c.Header("Retry-After", "5")
+		c.Header("Content-Type", "application/json; charset=utf-8")
+		c.String(http.StatusTooManyRequests, `{"error":{"code":"too_many_connections","message":"per-ip sse connection cap exceeded"}}`)
+		return
+	}
+	defer h.releaseConn(clientIP)
+
+	// Clear the per-response write deadline. The shared *http.Server
+	// sets WriteTimeout=30s for REST/GraphQL; that's the right posture
+	// for short responses but it would kill every long-lived SSE
+	// connection at the 30s heartbeat. http.NewResponseController is
+	// the supported escape hatch (Go 1.20+) — it surfaces the underlying
+	// transport's SetWriteDeadline, and a zero time disables it for
+	// just this response without changing the server-wide setting.
+	//
+	// The read deadline is left alone: ReadTimeout (10s) only bounds
+	// the request-line + header read on GET /events (no body), which
+	// has already completed by the time we reach this code.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		// Some test transports (httptest's default ResponseRecorder
+		// path) don't implement SetWriteDeadline — log at debug and
+		// continue. In production the gin/net.http chain always does.
+		h.logger.Debug().Err(err).Msg("sse: clear write deadline unsupported; continuing")
+	}
+
 	lastEventID := strings.TrimSpace(r.Header.Get("Last-Event-ID"))
 
 	// Headers MUST be written before the first event. WriteHeader is
