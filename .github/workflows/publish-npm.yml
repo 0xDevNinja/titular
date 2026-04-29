@@ -1,0 +1,119 @@
+---
+# Manual npm publish for the alpha SDK + CLI.
+#
+# Triggered on-demand via the GitHub Actions UI. We deliberately do NOT
+# publish on tag push during alpha — the surface is still moving, and we
+# want a human-in-the-loop to confirm a green main and the right version
+# bumps before each release. Once the SDK reaches 0.2.x we'll consider
+# wiring this to release-tag events.
+#
+# Auth: NPM_TOKEN repo secret (an npm "automation" token scoped to
+# `@titular/*`).
+#
+# Provenance: enabled via `--provenance`. Requires `id-token: write` so the
+# runner can mint an OIDC token for the npm registry. Provenance attests
+# the package was built from this exact commit on a GitHub-hosted runner;
+# consumers can verify with `npm audit signatures`.
+name: publish-npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "npm dist-tag to publish under"
+        required: false
+        default: "alpha"
+        type: choice
+        options:
+          - alpha
+          - beta
+          - latest
+      dry-run:
+        description: "Run `pnpm publish --dry-run` only (no upload)"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: build + publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # Required for `--provenance`: lets the runner mint an OIDC token
+      # for npm to attest the build.
+      id-token: write
+      # `read` is the default for hosted runners but we pin it explicitly
+      # to make the security posture obvious — this workflow does NOT
+      # write to the repo.
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.6.2"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          # `setup-node` writes the auth token into the runner-scoped .npmrc
+          # so subsequent `pnpm publish` calls authenticate without us
+          # echoing the token anywhere.
+          registry-url: "https://registry.npmjs.org"
+
+      - name: install
+        run: pnpm install --frozen-lockfile
+
+      - name: build sdk
+        run: pnpm -F @titular/acp-sdk build
+
+      - name: build cli
+        run: pnpm -F @titular/acp-cli build
+
+      - name: publish @titular/acp-sdk
+        if: ${{ inputs.dry-run == false }}
+        run: |
+          pnpm -F @titular/acp-sdk publish \
+            --tag "${{ inputs.tag }}" \
+            --no-git-checks \
+            --access public \
+            --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+
+      - name: publish @titular/acp-cli
+        if: ${{ inputs.dry-run == false }}
+        run: |
+          pnpm -F @titular/acp-cli publish \
+            --tag "${{ inputs.tag }}" \
+            --no-git-checks \
+            --access public \
+            --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+
+      - name: dry-run @titular/acp-sdk
+        if: ${{ inputs.dry-run == true }}
+        run: |
+          pnpm -F @titular/acp-sdk publish \
+            --tag "${{ inputs.tag }}" \
+            --no-git-checks \
+            --access public \
+            --dry-run
+
+      - name: dry-run @titular/acp-cli
+        if: ${{ inputs.dry-run == true }}
+        run: |
+          pnpm -F @titular/acp-cli publish \
+            --tag "${{ inputs.tag }}" \
+            --no-git-checks \
+            --access public \
+            --dry-run

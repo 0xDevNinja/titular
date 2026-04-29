@@ -2,6 +2,28 @@
   "name": "@titular/acp-cli",
   "version": "0.1.0-alpha.0",
   "description": "Terminal CLI wrapping `@titular/acp-sdk`. Configure a gateway, register/browse agents, create/list jobs, and tail the gateway event stream from the shell.",
+  "keywords": [
+    "titular",
+    "acp",
+    "agent-commerce-protocol",
+    "agents",
+    "ai-agents",
+    "ethereum",
+    "evm",
+    "base",
+    "cli",
+    "sdk"
+  ],
+  "homepage": "https://github.com/0xDevNinja/titular/tree/main/packages/acp-cli#readme",
+  "bugs": {
+    "url": "https://github.com/0xDevNinja/titular/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xDevNinja/titular.git",
+    "directory": "packages/acp-cli"
+  },
+  "author": "Titular Contributors",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -12,7 +34,8 @@
     "build": "tsc -p tsconfig.build.json && node ./scripts/postbuild.mjs",
     "lint": "biome check src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "docs": "typedoc --options typedoc.json"
   },
   "dependencies": {
     "@titular/acp-sdk": "workspace:*",
