@@ -9,17 +9,7 @@
 //   pnpm -F @titular/acp-sdk-e2e run compile:mocks
 //
 // The script writes back to this file and the e2e suite picks up the
-// new bytes on next run. The `topic0` constants below are pinned for
-// readability — vitest also asserts they match the runtime so a
-// silent-rename of an event signature surfaces as a clean failure.
-
-/** keccak256("AgentRegistered(uint256,address,string,uint256)"). */
-export const AGENT_REGISTERED_TOPIC0 =
-  "0xc29f819ac362ff9c94de06666235808451aafd8894a2dffb86a080a965efeae3" as const;
-
-/** keccak256("JobCreated(uint256,address,address,uint8,address,uint256)"). */
-export const JOB_CREATED_TOPIC0 =
-  "0xf956496ab0e37cf09cc3df7fd2b643c4a458b72e0d06e6cb9544a68553fabdd5" as const;
+// new bytes on next run.
 
 /** Runtime bytecode for `MockAgentRegistry` (solc 0.8.25, --optimize). */
 export const MOCK_AGENT_REGISTRY_RUNTIME =

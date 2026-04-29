@@ -8,10 +8,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "testcontainers/build/modules/postgresql/postgresql-container.js";
+import { GenericContainer, Wait } from "testcontainers";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -53,13 +50,35 @@ export async function startPostgres(): Promise<PostgresHandle> {
   // schema-equivalence guarantee is binary-identical, not just SQL-level.
   // testcontainers' `latest` would silently jump majors on reproducer
   // reruns weeks apart, which would defeat the point of pinning.
-  const container = (await new PostgreSqlContainer("postgres:16-alpine")
-    .withDatabase("titular_e2e")
-    .withUsername("titular")
-    .withPassword("titular")
-    .start()) as StartedPostgreSqlContainer;
+  //
+  // Use `GenericContainer` rather than the v9-era `PostgreSqlContainer`
+  // module: in v10+ that lives in a separate `@testcontainers/postgresql`
+  // package, and reaching into `testcontainers/build/...` is a private
+  // path that breaks across minor releases. The generic shape below is
+  // what `PostgreSqlContainer` does internally — env vars + the same
+  // log-readiness probe `pg_isready` boils down to.
+  const database = "titular_e2e";
+  const username = "titular";
+  const password = "titular";
+  const container = await new GenericContainer("postgres:16-alpine")
+    .withEnvironment({
+      POSTGRES_DB: database,
+      POSTGRES_USER: username,
+      POSTGRES_PASSWORD: password,
+    })
+    .withExposedPorts(5432)
+    .withWaitStrategy(
+      // Postgres logs the readiness banner twice on first boot: once when
+      // the temp init server comes up, again after `init.d` runs. Wait
+      // for the second to avoid racing the migration step against
+      // initdb's bootstrap.
+      Wait.forLogMessage("database system is ready to accept connections", 2)
+    )
+    .start();
 
-  const databaseUrl = container.getConnectionUri();
+  const host = container.getHost();
+  const port = container.getMappedPort(5432);
+  const databaseUrl = `postgresql://${username}:${password}@${host}:${port}/${database}`;
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 4 });
 
   await applyMigrations(pool);
@@ -67,11 +86,11 @@ export async function startPostgres(): Promise<PostgresHandle> {
   let closing: Promise<void> | undefined;
   return {
     databaseUrl,
-    host: container.getHost(),
-    port: container.getFirstMappedPort(),
-    database: container.getDatabase(),
-    username: container.getUsername(),
-    password: container.getPassword(),
+    host,
+    port,
+    database,
+    username,
+    password,
     async query(text, params) {
       return pool.query(text, params);
     },
