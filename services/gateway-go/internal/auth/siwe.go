@@ -52,6 +52,16 @@ type Handlers struct {
 	now func() time.Time // overridable in tests for ValidAt assertions
 }
 
+// Signer returns the JWT signer this handler bundle was constructed with.
+// Exposed so adjacent auth flows (SIWS) can be wired off the same signer
+// without re-reading env or duplicating secrets in memory.
+func (h *Handlers) Signer() *JWTSigner { return h.cfg.Signer }
+
+// Store returns the session store this handler bundle was constructed
+// with. Same rationale as Signer — SIWS reuses the SIWE store so a single
+// nonce namespace and a single session namespace span both flows.
+func (h *Handlers) Store() SessionStore { return h.cfg.Store }
+
 // NewHandlers wires the handler dependencies after validating that all the
 // required fields are present. Failing here at startup is preferable to
 // failing on the first request.
