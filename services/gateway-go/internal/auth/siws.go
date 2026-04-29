@@ -104,6 +104,17 @@ func NewSIWSHandlers(cfg SIWSHandlerConfig) (*SIWSHandlers, error) {
 // /auth/siws/nonce can only be consumed once across BOTH paths. This is
 // the right call because the nonce is just an entropy token; the chain
 // binding happens via the signed message, not the nonce.
+// @Summary      Issue SIWS nonce
+// @Description  Returns a fresh entropy nonce the client embeds in the
+// @Description  SIWS (Sign-In With Solana) message it asks the user to
+// @Description  sign. The nonce is single-use across both SIWE and SIWS
+// @Description  verify endpoints and expires after a short server-controlled
+// @Description  TTL.
+// @Tags         auth
+// @Produce      json
+// @Success      200  {object}  openapi.AuthNonceResponse
+// @Failure      500  {object}  openapi.AuthErrorResponse
+// @Router       /auth/siws/nonce [post]
 func (h *SIWSHandlers) Nonce(c *gin.Context) {
 	nonce, err := RandomNonce(nonceByteLen)
 	if err != nil {
@@ -146,6 +157,21 @@ type siwsVerifyRequest struct {
 // On step 5 we DO consume the nonce before signature verification (same
 // rationale as SIWE: a successful recovery against a stale-but-not-yet
 // deleted nonce cannot mint two sessions).
+// @Summary      Verify SIWS message and mint session
+// @Description  Validates a SIWS (Sign-In With Solana) message and its
+// @Description  ed25519 signature against the previously issued nonce,
+// @Description  the gateway's pinned domain, and the configured Solana
+// @Description  cluster; on success, returns a bearer JWT and persists
+// @Description  the session in Redis.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      openapi.AuthVerifyRequest  true  "SIWS message and base58 signature"
+// @Success      200   {object}  openapi.AuthVerifyResponse
+// @Failure      400   {object}  openapi.AuthErrorResponse  "invalid_request, invalid_message, domain_mismatch, cluster_mismatch, expired_message, invalid_address"
+// @Failure      401   {object}  openapi.AuthErrorResponse  "invalid_nonce or invalid_signature"
+// @Failure      500   {object}  openapi.AuthErrorResponse  "internal_error"
+// @Router       /auth/siws/verify [post]
 func (h *SIWSHandlers) Verify(c *gin.Context) {
 	var req siwsVerifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

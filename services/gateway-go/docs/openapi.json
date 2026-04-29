@@ -1,0 +1,937 @@
+{
+  "components": {
+    "schemas": {
+      "openapi.AgentsPage": {
+        "properties": {
+          "data": {
+            "description": "Data is the page contents in (block_number DESC, id DESC) order.",
+            "items": {
+              "$ref": "#/components/schemas/store.Agent"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "description": "NextCursor is the opaque pagination token. Empty on the final page.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.AuthErrorBody": {
+        "properties": {
+          "code": {
+            "description": "Code is a stable machine-readable identifier such as\n\"invalid_signature\", \"domain_mismatch\", \"rate_limited\".",
+            "example": "invalid_signature",
+            "type": "string"
+          },
+          "message": {
+            "description": "Message is a short human-readable hint. MUST NOT contain values\nderived from the request body (signature bytes, recovered\naddress, internal errors).",
+            "example": "signature did not verify",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.AuthErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/openapi.AuthErrorBody"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.AuthNonceResponse": {
+        "properties": {
+          "expires_at": {
+            "description": "ExpiresAt is the unix timestamp at which the nonce will be\nrejected by /verify even if signed correctly.",
+            "example": 1714512000,
+            "type": "integer"
+          },
+          "nonce": {
+            "description": "Nonce is a fresh single-use entropy token bound to the upcoming\n/verify call. Hex-encoded random bytes.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.AuthVerifyRequest": {
+        "properties": {
+          "message": {
+            "description": "Message is the EIP-4361 (SIWE) or analogous SIWS message string,\nverbatim — clients MUST NOT pre-parse and re-serialise it.",
+            "type": "string"
+          },
+          "signature": {
+            "description": "Signature is hex-encoded for SIWE (0x-prefixed, 65 bytes) and\nbase58 for SIWS (64-byte ed25519 signature).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.AuthVerifyResponse": {
+        "properties": {
+          "address": {
+            "description": "Address is the lowercase 0x-hex EVM address (SIWE) or base58\nSolana pubkey (SIWS) the token was issued to.",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "ExpiresAt is the unix timestamp the token expires at.",
+            "example": 1714598400,
+            "type": "integer"
+          },
+          "token": {
+            "description": "Token is the bearer JWT to attach as Authorization: Bearer \u003ctoken\u003e.",
+            "format": "address",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.HealthResponse": {
+        "properties": {
+          "status": {
+            "description": "Status is always \"ok\" when the gateway is serving.",
+            "example": "ok",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.JobsPage": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/store.Job"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.TradesPage": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/store.Trade"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "store.Agent": {
+        "properties": {
+          "agent_id": {
+            "description": "on-chain uint256, decimal",
+            "format": "bigint",
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "block_number": {
+            "type": "integer"
+          },
+          "capabilities": {
+            "description": "bitmap as decimal",
+            "format": "bigint",
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "controller": {
+            "description": "0x-hex (ACP)",
+            "format": "address",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "creator": {
+            "description": "0x-hex (launchpad)",
+            "format": "address",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/store.AgentKind"
+          },
+          "log_index": {
+            "type": "integer"
+          },
+          "metadata_uri": {
+            "description": "optional",
+            "type": "string"
+          },
+          "tx_hash": {
+            "description": "0x-hex",
+            "format": "bytes32",
+            "pattern": "^0x[a-fA-F0-9]{64}$",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "store.AgentKind": {
+        "enum": ["launchpad", "acp"],
+        "type": "string",
+        "x-enum-varnames": ["AgentKindLaunchpad", "AgentKindACP"]
+      },
+      "store.Job": {
+        "properties": {
+          "agent_id": {
+            "description": "on-chain uint256",
+            "format": "bigint",
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "agent_pk": {
+            "type": "integer"
+          },
+          "block_number": {
+            "type": "integer"
+          },
+          "budget": {
+            "format": "bigint",
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "clone_address": {
+            "format": "address",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deadline": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "job_type": {
+            "type": "integer"
+          },
+          "log_index": {
+            "type": "integer"
+          },
+          "on_chain_id": {
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/store.JobPhase"
+          },
+          "principal": {
+            "format": "address",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "type": "string"
+          },
+          "result_uri": {
+            "type": "string"
+          },
+          "token": {
+            "format": "address",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "type": "string"
+          },
+          "tx_hash": {
+            "format": "bytes32",
+            "pattern": "^0x[a-fA-F0-9]{64}$",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "store.JobPhase": {
+        "enum": [
+          "created",
+          "funded",
+          "active",
+          "completed",
+          "cancelled",
+          "disputed",
+          "released",
+          "resolved"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "JobPhaseCreated",
+          "JobPhaseFunded",
+          "JobPhaseActive",
+          "JobPhaseCompleted",
+          "JobPhaseCancelled",
+          "JobPhaseDisputed",
+          "JobPhaseReleased",
+          "JobPhaseResolved"
+        ]
+      },
+      "store.Stats": {
+        "properties": {
+          "last_block_indexed": {
+            "type": "integer"
+          },
+          "total_agents": {
+            "type": "integer"
+          },
+          "total_jobs": {
+            "type": "integer"
+          },
+          "total_trades": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "store.Trade": {
+        "properties": {
+          "agent_in": {
+            "format": "bigint",
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "agent_out": {
+            "format": "bigint",
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "agent_token_pk": {
+            "type": "integer"
+          },
+          "block_number": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "curve": {
+            "type": "string"
+          },
+          "fee": {
+            "format": "bigint",
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "log_index": {
+            "type": "integer"
+          },
+          "quote_in": {
+            "format": "bigint",
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "quote_out": {
+            "format": "bigint",
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "side": {
+            "description": "\"buy\" | \"sell\"",
+            "type": "string"
+          },
+          "trader": {
+            "format": "address",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "type": "string"
+          },
+          "tx_hash": {
+            "format": "bytes32",
+            "pattern": "^0x[a-fA-F0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "description": "Bearer token issued by POST /auth/siwe/verify or /auth/siws/verify.",
+        "in": "header",
+        "name": "Authorization",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "name": "Titular maintainers",
+      "url": "https://github.com/0xDevNinja/titular"
+    },
+    "description": "Read-only REST surface plus SIWE / SIWS authentication for the\nTitular protocol. The gateway proxies a Postgres-backed read\nmodel populated by the indexer track and offers a parallel\nGraphQL surface (see /graphql) and SSE event stream\n(see /events). All amount and id fields that originate as\nuint256 on chain are encoded as decimal strings on the wire.\nAuthentication uses bearer tokens minted by the SIWE / SIWS\nverify endpoints; the read endpoints are public by default.",
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    },
+    "termsOfService": "https://github.com/0xDevNinja/titular",
+    "title": "Titular Gateway API",
+    "version": "0.1.0-alpha"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/api/v1/agents": {
+      "get": {
+        "description": "Returns a paginated, opaque-cursor page of registered agents.\nFilterable by agent kind. Cursor is base64-encoded JSON the\nclient MUST treat as opaque and pass back unmodified.",
+        "parameters": [
+          {
+            "description": "opaque pagination cursor; omit for the first page",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; 1..200, default 50",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "agent kind filter",
+            "in": "query",
+            "name": "kind",
+            "schema": {
+              "enum": ["launchpad", "acp"],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AgentsPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "unknown query parameter, or kind/limit out of range"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "internal server error"
+          }
+        },
+        "summary": "List agents",
+        "tags": ["agents"]
+      }
+    },
+    "/api/v1/agents/{id}": {
+      "get": {
+        "description": "Returns the registered agent identified by its primary key\n(decimal int64) or kind-qualified slug \"kind:agent_id\".",
+        "parameters": [
+          {
+            "description": "agent primary key or kind:agent_id slug",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/store.Agent"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "agent not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "internal server error"
+          }
+        },
+        "summary": "Get agent",
+        "tags": ["agents"]
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "description": "Returns a paginated, opaque-cursor page of ACP jobs.\nFilterable by phase via the `status` query parameter.",
+        "parameters": [
+          {
+            "description": "opaque pagination cursor",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; 1..200, default 50",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "ACP job phase filter",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "created",
+                "funded",
+                "active",
+                "completed",
+                "cancelled",
+                "disputed",
+                "released",
+                "resolved"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.JobsPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "unknown query parameter, or invalid status/limit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "internal server error"
+          }
+        },
+        "summary": "List ACP jobs",
+        "tags": ["jobs"]
+      }
+    },
+    "/api/v1/stats": {
+      "get": {
+        "description": "Returns total agent / job / trade counters and the highest\nblock number observed by the indexer track. Cached to a few\nseconds upstream; clients SHOULD NOT poll faster than 5s.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/store.Stats"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "internal server error"
+          }
+        },
+        "summary": "Aggregate protocol stats",
+        "tags": ["stats"]
+      }
+    },
+    "/api/v1/trades": {
+      "get": {
+        "description": "Returns a paginated, opaque-cursor page of bonding-curve\ntrades (buy + sell). Filterable by agent token address and\nby an inclusive [from, to] window on the indexer-recorded\ncreated_at timestamp.",
+        "parameters": [
+          {
+            "description": "opaque pagination cursor",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; 1..200, default 50",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "0x-prefixed 20-byte token address",
+            "in": "query",
+            "name": "agent_token",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "inclusive RFC 3339 lower bound on created_at",
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "inclusive RFC 3339 upper bound on created_at",
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.TradesPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "unknown query parameter, or invalid time/limit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "internal server error"
+          }
+        },
+        "summary": "List trades",
+        "tags": ["trades"]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "Idempotently revokes the session associated with the\nAuthorization bearer token. Returns 204 whether or not the\nsession existed; the response is invariant so callers\ncannot probe for live JTIs.",
+        "responses": {
+          "204": {
+            "description": "session revoked or no-op"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "internal_error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Revoke session",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/siwe/nonce": {
+      "post": {
+        "description": "Returns a fresh entropy nonce the client embeds in the\nEIP-4361 SIWE message it asks the user to sign. The nonce\nis single-use across both SIWE and SIWS verify endpoints\nand expires after a short server-controlled TTL.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthNonceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Issue SIWE nonce",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/siwe/verify": {
+      "post": {
+        "description": "Validates an EIP-4361 SIWE message and its EVM signature\nagainst the previously issued nonce, the gateway's pinned\ndomain, and the configured chain id; on success, returns a\nbearer JWT and persists the session in Redis.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.AuthVerifyRequest"
+              }
+            }
+          },
+          "description": "SIWE message and signature",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthVerifyResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request, invalid_message, domain_mismatch, chain_mismatch, expired_message"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_nonce or invalid_signature"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "internal_error"
+          }
+        },
+        "summary": "Verify SIWE message and mint session",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/siws/nonce": {
+      "post": {
+        "description": "Returns a fresh entropy nonce the client embeds in the\nSIWS (Sign-In With Solana) message it asks the user to\nsign. The nonce is single-use across both SIWE and SIWS\nverify endpoints and expires after a short server-controlled\nTTL.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthNonceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Issue SIWS nonce",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/siws/verify": {
+      "post": {
+        "description": "Validates a SIWS (Sign-In With Solana) message and its\ned25519 signature against the previously issued nonce,\nthe gateway's pinned domain, and the configured Solana\ncluster; on success, returns a bearer JWT and persists\nthe session in Redis.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.AuthVerifyRequest"
+              }
+            }
+          },
+          "description": "SIWS message and base58 signature",
+          "required": true,
+          "x-originalParamName": "body"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthVerifyResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_request, invalid_message, domain_mismatch, cluster_mismatch, expired_message, invalid_address"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "invalid_nonce or invalid_signature"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.AuthErrorResponse"
+                }
+              }
+            },
+            "description": "internal_error"
+          }
+        },
+        "summary": "Verify SIWS message and mint session",
+        "tags": ["auth"]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "description": "Returns {\"status\":\"ok\"} as soon as the HTTP server is up.\nThis endpoint does NOT depend on Postgres, Redis, or NATS;\nit is intentionally a chassis-only check so orchestrators\ncan distinguish \"binary running\" from \"fully wired\".",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HealthResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Liveness probe",
+        "tags": ["health"]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080/"
+    },
+    {
+      "url": "https://localhost:8080/"
+    }
+  ]
+}

@@ -114,6 +114,17 @@ func writeError(c *gin.Context, status int, code, msg string) {
 // Nonce issues a fresh nonce and stores it in the session store with the
 // configured TTL. The endpoint is intended to be hit unauthenticated, so
 // callers SHOULD wire it behind the existing rate-limit middleware.
+//
+// @Summary      Issue SIWE nonce
+// @Description  Returns a fresh entropy nonce the client embeds in the
+// @Description  EIP-4361 SIWE message it asks the user to sign. The nonce
+// @Description  is single-use across both SIWE and SIWS verify endpoints
+// @Description  and expires after a short server-controlled TTL.
+// @Tags         auth
+// @Produce      json
+// @Success      200  {object}  openapi.AuthNonceResponse
+// @Failure      500  {object}  openapi.AuthErrorResponse
+// @Router       /auth/siwe/nonce [post]
 func (h *Handlers) Nonce(c *gin.Context) {
 	nonce, err := RandomNonce(nonceByteLen)
 	if err != nil {
@@ -164,6 +175,21 @@ type verifyResponse struct {
 //  4. Atomic ConsumeNonce — single-use guarantee.
 //  5. ECDSA signature recovery + EIP-55 address match.
 //  6. Mint JWT, persist session, return.
+//
+// @Summary      Verify SIWE message and mint session
+// @Description  Validates an EIP-4361 SIWE message and its EVM signature
+// @Description  against the previously issued nonce, the gateway's pinned
+// @Description  domain, and the configured chain id; on success, returns a
+// @Description  bearer JWT and persists the session in Redis.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      openapi.AuthVerifyRequest  true  "SIWE message and signature"
+// @Success      200   {object}  openapi.AuthVerifyResponse
+// @Failure      400   {object}  openapi.AuthErrorResponse  "invalid_request, invalid_message, domain_mismatch, chain_mismatch, expired_message"
+// @Failure      401   {object}  openapi.AuthErrorResponse  "invalid_nonce or invalid_signature"
+// @Failure      500   {object}  openapi.AuthErrorResponse  "internal_error"
+// @Router       /auth/siwe/verify [post]
 func (h *Handlers) Verify(c *gin.Context) {
 	var req verifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -240,6 +266,17 @@ func (h *Handlers) Verify(c *gin.Context) {
 // We require a syntactically valid token (signature, alg, exp) to find the
 // JTI we want to delete; we do NOT require SessionExists, because a logout
 // against an already-expired session should still report success.
+//
+// @Summary      Revoke session
+// @Description  Idempotently revokes the session associated with the
+// @Description  Authorization bearer token. Returns 204 whether or not the
+// @Description  session existed; the response is invariant so callers
+// @Description  cannot probe for live JTIs.
+// @Tags         auth
+// @Security     BearerAuth
+// @Success      204  "session revoked or no-op"
+// @Failure      500  {object}  openapi.AuthErrorResponse  "internal_error"
+// @Router       /auth/logout [post]
 func (h *Handlers) Logout(c *gin.Context) {
 	tok := bearerFromHeader(c.GetHeader("Authorization"))
 	if tok == "" {

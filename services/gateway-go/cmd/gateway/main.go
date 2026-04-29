@@ -80,6 +80,59 @@
 //	                              to a negative number disables the
 //	                              cap (intended for trusted networks
 //	                              and tests only).
+//	GATEWAY_SWAGGER_UI            "true" mounts the Swagger UI at
+//	                              /swagger/ alongside the spec at
+//	                              /swagger/doc.json (and /swagger/doc.yaml).
+//	                              Default false; do NOT enable in
+//	                              production-facing deployments — the UI
+//	                              lets anyone browse the schema and
+//	                              issue arbitrary requests against the
+//	                              read-only surface.
+//
+// @title           Titular Gateway API
+// @version         0.1.0-alpha
+// @description     Read-only REST surface plus SIWE / SIWS authentication for the
+// @description     Titular protocol. The gateway proxies a Postgres-backed read
+// @description     model populated by the indexer track and offers a parallel
+// @description     GraphQL surface (see /graphql) and SSE event stream
+// @description     (see /events). All amount and id fields that originate as
+// @description     uint256 on chain are encoded as decimal strings on the wire.
+// @description     Authentication uses bearer tokens minted by the SIWE / SIWS
+// @description     verify endpoints; the read endpoints are public by default.
+// @termsOfService  https://github.com/0xDevNinja/titular
+//
+// @contact.name    Titular maintainers
+// @contact.url     https://github.com/0xDevNinja/titular
+//
+// @license.name    MIT
+// @license.url     https://opensource.org/licenses/MIT
+//
+// @host      localhost:8080
+// @BasePath  /
+// @schemes   http https
+//
+// @securityDefinitions.apikey BearerAuth
+// @in    header
+// @name  Authorization
+// @description  Bearer token issued by POST /auth/siwe/verify or /auth/siws/verify.
+//
+// @tag.name  health
+// @tag.description  Liveness probes for orchestration.
+//
+// @tag.name  auth
+// @tag.description  SIWE (EVM) and SIWS (Solana) wallet authentication.
+//
+// @tag.name  agents
+// @tag.description  Indexed agent registry (launchpad + ACP).
+//
+// @tag.name  trades
+// @tag.description  Bonding-curve trade history.
+//
+// @tag.name  jobs
+// @tag.description  ACP job lifecycle records.
+//
+// @tag.name  stats
+// @tag.description  Aggregate protocol counters.
 package main
 
 import (
@@ -105,9 +158,12 @@ import (
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/graph"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/openapi"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/router"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/sse"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/store"
+
+	gatewaydocs "github.com/0xDevNinja/titular/services/gateway-go/docs"
 )
 
 func main() {
@@ -168,6 +224,11 @@ func main() {
 		log.Fatal().Err(err).Msg("invalid SSE configuration")
 	}
 
+	openAPISpec, err := buildOpenAPISpec()
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid OpenAPI configuration")
+	}
+
 	cfg := router.Config{
 		Logger:         log.Logger,
 		Service:        service,
@@ -179,6 +240,7 @@ func main() {
 		API:            apiHandlers,
 		GraphQL:        gqlHandler,
 		SSE:            sseHandler,
+		OpenAPI:        openAPISpec,
 	}
 
 	built := router.NewWithConfigLifecycle(cfg, agentHandlers, jobHandlers)
@@ -531,6 +593,22 @@ func buildSIWSHandlers(siwe *auth.Handlers, client *redis.Client) (*auth.SIWSHan
 		Domain:  domain,
 		Cluster: cluster,
 	})
+}
+
+// buildOpenAPISpec returns the OpenAPI handler bundle, populated from the
+// embedded swag-generated spec under services/gateway-go/docs/. The raw
+// /swagger/doc.json + /swagger/doc.yaml endpoints are mounted
+// unconditionally; the Swagger UI viewer at /swagger/ is gated by the
+// GATEWAY_SWAGGER_UI env var (default off).
+//
+// The spec is embedded at build time so the running gateway always
+// serves the document that matches its own source — no filesystem
+// lookups, no version skew. Regeneration is a developer step
+// (`swag init` from services/gateway-go) and is enforced in CI by the
+// gateway-openapi-check drift gate.
+func buildOpenAPISpec() (*openapi.Spec, error) {
+	enableUI := openapi.EnabledFromEnv(os.Getenv("GATEWAY_SWAGGER_UI"))
+	return openapi.NewSpec(gatewaydocs.SpecJSON, gatewaydocs.SpecYAML, enableUI)
 }
 
 // envOr returns the value of the named env var, falling back to def when
