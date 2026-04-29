@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
@@ -46,7 +47,24 @@ import (
 // NOT use prometheus.DefaultRegisterer because that is process-global
 // and any imported package can clobber it — the isolated registry
 // keeps /metrics output to indexer-emitted samples only.
-var promRegistry = prometheus.NewRegistry()
+var promRegistry = newPromRegistry()
+
+// newPromRegistry constructs the package-private Prometheus registry
+// pre-loaded with the stdlib process + Go runtime collectors. The
+// Grafana dashboard (ops/grafana/dashboards/indexer.json) charts
+// `process_resident_memory_bytes` directly; the OTel-Prom bridge does
+// NOT export those samples on its own, so we MUST register the
+// collectors on the same registry the bridge writes into.
+//
+// MustRegister is safe here because the registry is freshly minted on
+// every call — collisions are impossible. The same path is reused by
+// resetPrometheusForTest so unit tests start with the same baseline.
+func newPromRegistry() *prometheus.Registry {
+	r := prometheus.NewRegistry()
+	r.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	r.MustRegister(collectors.NewGoCollector())
+	return r
+}
 
 var (
 	mpMu              sync.Mutex
@@ -163,7 +181,7 @@ func resetPrometheusForTest() {
 	}
 	indexerPromReader = nil
 	indexerMP = nil
-	promRegistry = prometheus.NewRegistry()
+	promRegistry = newPromRegistry()
 }
 
 // Meter returns an OTel meter via the global provider. Mirrors

@@ -127,3 +127,24 @@ func GraphQLSubscriptions() metric.Int64UpDownCounter {
 type noopUpDownCounter struct{ metric.Int64UpDownCounter }
 
 func (noopUpDownCounter) Add(context.Context, int64, ...metric.AddOption) {}
+
+// ResetForTest tears down the Prometheus reader, MeterProvider, and
+// resets the lazy-init guard on the custom gateway instruments so a
+// subsequent SSEConnections / GraphQLSubscriptions call rebuilds them
+// against a freshly-installed MeterProvider. Intended for use by
+// tests in sibling packages that exercise the gauge transitions
+// (e.g. internal/sse and internal/graph).
+//
+// Safe to call from concurrent test goroutines: it serialises through
+// the same mpMu used by AttachPrometheusReader / PrometheusHandler.
+//
+// NOT exported as a stable API — the suffix conveys it's a test seam.
+// Production code MUST not call this; it would race with live
+// /metrics scrapes and lose every accumulated sample.
+func ResetForTest() {
+	resetPrometheusForTest()
+	gatewayInstrumentsOnce = sync.Once{}
+	gatewaySSEGauge = nil
+	gatewayGQLSubGauge = nil
+	gatewayInstrumentsErr = nil
+}

@@ -209,6 +209,14 @@ func NewWithConfigLifecycle(
 	// otelgin's bookkeeping is allocation-free.
 	engine.Use(middleware.OTelMiddleware(cfg.Service))
 	engine.Use(middleware.TraceCorrelation())
+	// Hand-instrumented HTTP histogram. otelgin (mounted above) only
+	// emits spans, not metrics, so without this middleware the
+	// http_server_request_duration_seconds_* series the Grafana
+	// dashboard charts (ops/grafana/dashboards/gateway.json) never
+	// appear on the /metrics surface. Mounted AFTER OTelMiddleware so
+	// the active span is in scope when the histogram records (any
+	// future per-route exemplar wiring can hang off the same context).
+	engine.Use(middleware.HTTPMetrics())
 	engine.Use(middleware.Log(middleware.LogConfig{
 		Logger:    logger,
 		Service:   cfg.Service,

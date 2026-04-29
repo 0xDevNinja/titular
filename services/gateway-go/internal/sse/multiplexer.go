@@ -382,6 +382,17 @@ func (m *Multiplexer) Subscribe(opts SubscribeOptions) (*Subscriber, error) {
 	m.subs[id] = entry
 	m.subsMu.Unlock()
 
+	// Bump the live-connection gauge for the Grafana SSE panel. We
+	// pair the +1 here with a -1 in cancel so the gauge reflects the
+	// instantaneous fan-out and not a cumulative count. observability
+	// hands back a no-op instrument when the meter provider has not
+	// been built, so this is allocation-light when metrics are off.
+	observability.SSEConnections().Add(context.Background(), 1)
+
+	// once guards the gauge decrement so a Subscriber.Close() racing
+	// with multiplexer.Stop() (both call into this cancel via
+	// safeClose) does not double-decrement.
+	var once sync.Once
 	cancel := func() {
 		m.subsMu.Lock()
 		_, ok := m.subs[id]
@@ -390,6 +401,9 @@ func (m *Multiplexer) Subscribe(opts SubscribeOptions) (*Subscriber, error) {
 		if ok {
 			safeClose(ch)
 		}
+		once.Do(func() {
+			observability.SSEConnections().Add(context.Background(), -1)
+		})
 	}
 
 	return &Subscriber{

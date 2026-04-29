@@ -230,10 +230,21 @@ func (b *natsBus) subscribe(
 		return err
 	}
 
+	// Bump the live-subscription gauge for the Grafana panel. We pair
+	// the +1 here with a -1 in the goroutine's defer below so a normal
+	// exit (ctx cancelled, NATS sub torn down, resolver dropped the
+	// channel) brings the gauge back down. observability.GraphQLSubscriptions
+	// hands back a no-op when the meter provider has not been built,
+	// so this is allocation-light when metrics are off. The +1 lives
+	// AFTER the b.nc.Subscribe error gate so a failed subscribe does
+	// not leak gauge state.
+	observability.GraphQLSubscriptions().Add(ctx, 1)
+
 	go func() {
 		defer func() {
 			_ = sub.Unsubscribe()
 			closeAny(out)
+			observability.GraphQLSubscriptions().Add(ctx, -1)
 		}()
 		for {
 			select {

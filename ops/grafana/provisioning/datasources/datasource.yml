@@ -9,6 +9,12 @@ apiVersion: 1
 
 datasources:
   - name: Prometheus
+    # Stable UID referenced by every dashboard JSON under
+    # ops/grafana/dashboards/. Without it Grafana mints a random UID at
+    # provisioning time and the dashboards' "datasource":{"uid":"prometheus"}
+    # references resolve to nothing, producing the "Datasource not found"
+    # banner on every panel.
+    uid: prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090
