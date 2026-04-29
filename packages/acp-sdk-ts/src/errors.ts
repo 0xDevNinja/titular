@@ -13,7 +13,8 @@ export type AcpErrorCode =
   | "tx_reverted"
   | "event_not_found"
   | "provider_cannot_sign"
-  | "auth_failed";
+  | "auth_failed"
+  | "keyring_unavailable";
 
 /**
  * Base error class for everything thrown by the SDK. Always carries a
