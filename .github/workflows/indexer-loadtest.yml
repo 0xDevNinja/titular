@@ -1,0 +1,81 @@
+---
+# indexer-loadtest — opt-in throughput / latency check for the indexer's
+# publisher path.
+#
+# Why a separate workflow:
+#
+#   * The default `test` workflow runs on every push / PR. The load test
+#     sustains synthetic publish for ~60s and would dominate that
+#     pipeline for changes that have nothing to do with the indexer.
+#   * Failures here are SLO regressions, not correctness regressions, so
+#     the right place to surface them is a scheduled run + a manual
+#     trigger reviewers can flip on for indexer-pipeline PRs that touch
+#     the publisher / decoder hot path.
+#
+# Triggers:
+#
+#   * `workflow_dispatch` — manual run, pickable from the Actions tab.
+#   * `schedule` — weekly Monday 04:30 UTC. The cadence catches drift
+#     introduced by dependency bumps without spending CI minutes on
+#     every PR.
+#
+# Note: the test fails the run only on a hard SLO violation (throughput
+# below the 10k/min floor or p99 latency above the 150ms budget). Smaller
+# regressions show up in the run log so reviewers can spot trends without
+# the workflow flipping red on every CI runner hiccup.
+
+name: indexer-loadtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Sustained-load window (Go duration, e.g. 30s, 60s, 5m)"
+        required: false
+        default: "60s"
+  schedule:
+    # Mondays at 04:30 UTC — picked outside US / EU business hours so the
+    # weekly run does not contend with PR CI for shared runner capacity.
+    - cron: "30 4 * * 1"
+
+concurrency:
+  # Single in-flight load test per ref. A second push during a run
+  # cancels the older invocation rather than queueing them — the SLO
+  # check is point-in-time, so a stale run is never the most useful one.
+  group: indexer-loadtest-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  loadtest:
+    name: indexer publisher loadtest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      # The loadtest binary needs neither anvil nor docker; everything
+      # runs in-process via embedded NATS JetStream. Keep the step list
+      # minimal so the runner cost stays close to the bare `go test`
+      # cost.
+      - name: indexer-go loadtest
+        working-directory: services/indexer-go
+        env:
+          # Honour the workflow_dispatch input when present; fall back to
+          # the in-test default (60s) so scheduled runs still assert the
+          # full minute-long SLO window.
+          TITULAR_LOADTEST_DURATION: ${{ github.event.inputs.duration }}
+        run: |
+          go test -tags loadtest \
+            -run Test_Loadtest_PublisherOnly_Sustains10kPerMinute \
+            -count=1 \
+            -timeout 10m \
+            -v \
+            ./internal/integration/...
