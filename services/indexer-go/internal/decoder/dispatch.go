@@ -28,6 +28,7 @@
 package decoder
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -88,16 +89,23 @@ type Decoder func(log types.Log) (any, error)
 // (the indexer's main loop). A non-nil error returned from OnEvent terminates
 // the per-block processing pipeline; transient downstream failures should be
 // retried inside the implementation rather than surfaced.
+//
+// The ctx is the per-block context: handlers MUST honour ctx.Done() so a
+// stalled downstream (e.g. an unreachable NATS server) does not pin the
+// indexer's main loop indefinitely. Callers cancel the ctx when shutting
+// down or when they want to abandon a block.
 type Handler interface {
-	OnEvent(event DecodedEvent) error
+	OnEvent(ctx context.Context, event DecodedEvent) error
 }
 
 // HandlerFunc adapts a plain function to [Handler]. Useful for tests and for
 // composing small ad-hoc handlers without a named type.
-type HandlerFunc func(event DecodedEvent) error
+type HandlerFunc func(ctx context.Context, event DecodedEvent) error
 
 // OnEvent satisfies the Handler interface by calling the underlying func.
-func (f HandlerFunc) OnEvent(event DecodedEvent) error { return f(event) }
+func (f HandlerFunc) OnEvent(ctx context.Context, event DecodedEvent) error {
+	return f(ctx, event)
+}
 
 // registryEntry pairs the decoder for a topic0 with the qualified event name
 // it produces, so [Dispatch] does not have to thread the name separately.
@@ -165,6 +173,20 @@ func KnownTopics() []common.Hash {
 	return out
 }
 
+// KnownEvents returns the list of contract-qualified event names the
+// dispatch table currently recognises (e.g. "Job.JobInitialised"). Order is
+// not stable. Used by sibling packages (the publisher's subject table) to
+// assert that every decoded event has a downstream mapping.
+func KnownEvents() []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	out := make([]string, 0, len(registry))
+	for _, e := range registry {
+		out = append(out, e.name)
+	}
+	return out
+}
+
 // Dispatch decodes a single log against the registered decoders and returns
 // the contract-qualified event name plus the typed payload.
 //
@@ -217,7 +239,7 @@ func Dispatch(log types.Log) (DecodedEvent, error) {
 //	(false, nil)        — log skipped because topic0 is unknown OR has no topics.
 //	(_,     non-nil)    — decode error or handler error; caller decides whether
 //	                      to abort the block.
-func DispatchAndHandle(log types.Log, handler Handler) (bool, error) {
+func DispatchAndHandle(ctx context.Context, log types.Log, handler Handler) (bool, error) {
 	if handler == nil {
 		return false, errors.New("decoder.DispatchAndHandle: handler is nil")
 	}
@@ -228,7 +250,7 @@ func DispatchAndHandle(log types.Log, handler Handler) (bool, error) {
 	case err != nil:
 		return false, err
 	}
-	if err := handler.OnEvent(event); err != nil {
+	if err := handler.OnEvent(ctx, event); err != nil {
 		return false, fmt.Errorf("handler %s: %w", event.Name, err)
 	}
 	return true, nil
