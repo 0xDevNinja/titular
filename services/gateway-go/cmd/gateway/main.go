@@ -34,6 +34,18 @@
 //	                              prevent cross-site replay.
 //	GATEWAY_SIWE_CHAIN_ID         the chain id the SIWE message MUST declare.
 //	                              Defaults to 84532 (Base Sepolia).
+//	GATEWAY_SIWS_DOMAIN           the value the SIWS (Sign-In With Solana)
+//	                              message MUST declare in its header line.
+//	                              Pinned server-side to prevent cross-site
+//	                              replay. Falls back to GATEWAY_SIWE_DOMAIN
+//	                              when unset so single-domain deployments
+//	                              don't need to configure twice.
+//	GATEWAY_SIWS_CLUSTER          the Solana cluster the SIWS message MUST
+//	                              declare. One of "devnet", "mainnet-beta",
+//	                              "testnet". Defaults to "devnet". Setting
+//	                              this enables the /auth/siws/* endpoints
+//	                              (provided JWT_SECRET + REDIS_URL are also
+//	                              set).
 package main
 
 import (
@@ -87,6 +99,10 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("invalid auth configuration")
 	}
+	siwsHandlers, err := buildSIWSHandlers(authHandlers, redisClient)
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid SIWS configuration")
+	}
 
 	cfg := router.Config{
 		Logger:         log.Logger,
@@ -95,6 +111,7 @@ func main() {
 		RateLimit:      buildRateLimitConfig(),
 		TrustedProxies: parseList(os.Getenv("GATEWAY_TRUSTED_PROXIES")),
 		Auth:           authHandlers,
+		SIWS:           siwsHandlers,
 	}
 
 	built := router.NewWithConfigLifecycle(cfg, agentHandlers, jobHandlers)
@@ -221,6 +238,49 @@ func buildAuthHandlers(ctx context.Context) (*auth.Handlers, *redis.Client, erro
 		return nil, nil, err
 	}
 	return h, client, nil
+}
+
+// buildSIWSHandlers assembles the Sign-In-With-Solana handler bundle on top
+// of the existing SIWE infrastructure. We deliberately reuse the signer
+// and session store so:
+//
+//   - There is only one JWT secret in memory (no fan-out of HMAC keys).
+//   - Logout is a single endpoint that revokes either flow's tokens.
+//   - The nonce namespace is shared, which is correct: the chain binding
+//     happens via the signed message, not the nonce.
+//
+// SIWS is enabled when SIWE is enabled AND GATEWAY_SIWS_CLUSTER is set.
+// We accept GATEWAY_SIWS_DOMAIN as an explicit override for deployments
+// where the SIWS-facing domain differs from the SIWE-facing domain;
+// otherwise we inherit GATEWAY_SIWE_DOMAIN.
+func buildSIWSHandlers(siwe *auth.Handlers, client *redis.Client) (*auth.SIWSHandlers, error) {
+	if siwe == nil || client == nil {
+		// SIWE not configured — SIWS cannot be either, since they share
+		// the signer/store. Caller treats nil as "feature off".
+		return nil, nil
+	}
+	cluster := strings.TrimSpace(os.Getenv("GATEWAY_SIWS_CLUSTER"))
+	if cluster == "" {
+		// SIWS opt-in: explicitly require the operator to declare a
+		// cluster. We refuse to default to mainnet — getting that
+		// silently wrong is the worst possible failure mode.
+		return nil, nil
+	}
+
+	domain := strings.TrimSpace(os.Getenv("GATEWAY_SIWS_DOMAIN"))
+	if domain == "" {
+		domain = strings.TrimSpace(os.Getenv("GATEWAY_SIWE_DOMAIN"))
+	}
+	if domain == "" {
+		return nil, errors.New("GATEWAY_SIWS_DOMAIN or GATEWAY_SIWE_DOMAIN required when SIWS enabled")
+	}
+
+	return auth.NewSIWSHandlers(auth.SIWSHandlerConfig{
+		Store:   siwe.Store(),
+		Signer:  siwe.Signer(),
+		Domain:  domain,
+		Cluster: cluster,
+	})
 }
 
 // envOr returns the value of the named env var, falling back to def when

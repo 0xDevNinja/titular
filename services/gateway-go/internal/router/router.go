@@ -47,6 +47,12 @@ import (
 // /auth/siwe/nonce, /auth/siwe/verify and /auth/logout when present. When
 // nil, the auth endpoints are simply absent — useful in tests that don't
 // want to spin up Redis.
+//
+// SIWS, when non-nil, is the Sign-In-With-Solana handler bundle. The
+// router mounts /auth/siws/nonce and /auth/siws/verify when present. The
+// SIWS path reuses the SIWE /auth/logout endpoint via the shared JWT
+// signer and session store, so a SIWS-minted token logs out through the
+// same handler as a SIWE-minted one.
 type Config struct {
 	Logger         zerolog.Logger
 	Service        string
@@ -54,6 +60,7 @@ type Config struct {
 	RateLimit      middleware.RateLimitConfig
 	TrustedProxies []string
 	Auth           *auth.Handlers
+	SIWS           *auth.SIWSHandlers
 }
 
 // DefaultConfig returns a Config suitable for local development.
@@ -172,15 +179,25 @@ func NewWithConfigLifecycle(
 		c.String(http.StatusOK, `{"status":"ok"}`)
 	})
 
-	// SIWE auth — mounted before /v1 so the routes can never be accidentally
-	// shadowed by a /v1/* catch-all. The /auth group inherits the rate
-	// limiter (#86 OWASP gate) but, by design, NOT RequireAuth — the verify
-	// endpoint is what bootstraps the session in the first place.
-	if cfg.Auth != nil {
+	// SIWE/SIWS auth — mounted before /v1 so the routes can never be
+	// accidentally shadowed by a /v1/* catch-all. The /auth group inherits
+	// the rate limiter (#86 OWASP gate) but, by design, NOT RequireAuth —
+	// the verify endpoints are what bootstrap the session in the first
+	// place.
+	//
+	// SIWS reuses the SIWE Logout handler (cfg.Auth.Logout) because the
+	// JWT signer + Redis session store are shared across both paths.
+	if cfg.Auth != nil || cfg.SIWS != nil {
 		authGroup := engine.Group("/auth")
-		authGroup.POST("/siwe/nonce", cfg.Auth.Nonce)
-		authGroup.POST("/siwe/verify", cfg.Auth.Verify)
-		authGroup.POST("/logout", cfg.Auth.Logout)
+		if cfg.Auth != nil {
+			authGroup.POST("/siwe/nonce", cfg.Auth.Nonce)
+			authGroup.POST("/siwe/verify", cfg.Auth.Verify)
+			authGroup.POST("/logout", cfg.Auth.Logout)
+		}
+		if cfg.SIWS != nil {
+			authGroup.POST("/siws/nonce", cfg.SIWS.Nonce)
+			authGroup.POST("/siws/verify", cfg.SIWS.Verify)
+		}
 	}
 
 	// Mount chi for the legacy /v1 fixture endpoints. We bind under a

@@ -36,6 +36,8 @@ flags:
 | `GATEWAY_REDIS_URL` | Redis connection URL (`redis://host:port/db`). Required when `GATEWAY_JWT_SECRET` is set. |
 | `GATEWAY_SIWE_DOMAIN` | The value the SIWE message MUST declare in its `domain` line. Pinned server-side to prevent cross-site replay. |
 | `GATEWAY_SIWE_CHAIN_ID` | The chain id the SIWE message MUST declare. Defaults to `84532` (Base Sepolia). |
+| `GATEWAY_SIWS_DOMAIN` | The value the SIWS (Sign-In With Solana) message MUST declare. Falls back to `GATEWAY_SIWE_DOMAIN` when unset so single-domain deployments configure once. |
+| `GATEWAY_SIWS_CLUSTER` | Solana cluster the SIWS message MUST declare. One of `devnet`, `mainnet-beta`, `testnet`. Setting this enables `/auth/siws/*`. No default — operators must opt in explicitly. |
 
 ### SIWE auth (`/auth/*`)
 
@@ -51,6 +53,28 @@ When `GATEWAY_JWT_SECRET` is set the gateway exposes:
 Protected routes can opt in to authentication via `auth.RequireAuth(handlers)`.
 The middleware double-checks the JWT signature **and** the Redis session, so
 deleting a session immediately revokes every token it backs.
+
+### SIWS auth (`/auth/siws/*`)
+
+When `GATEWAY_JWT_SECRET` and `GATEWAY_SIWS_CLUSTER` are both set, the gateway
+additionally exposes the Sign-In-With-Solana flow:
+
+- `POST /auth/siws/nonce` — same shape and TTL as the SIWE nonce. The nonce
+  namespace is shared between SIWE and SIWS so a single nonce is single-use
+  across both paths.
+- `POST /auth/siws/verify` — accepts `{ "message": "<SIWS>", "signature":
+  "<base58>" }`, validates domain, cluster (`devnet`/`mainnet-beta`/`testnet`),
+  time window and the ed25519 signature, atomically consumes the nonce, mints a
+  JWT and seeds a Redis session. Verification uses Go's stdlib
+  `crypto/ed25519`, which is constant-time per the language contract.
+- Logout is shared with the SIWE path (`POST /auth/logout`); a SIWS-minted token
+  logs out via the same endpoint.
+
+The SIWS message format is a port of EIP-4361 with a `Chain ID` (or `Cluster`)
+field naming a Solana network instead of an EVM chain id; the handler accepts
+either field name. Phantom and Backpack clients can be wired in directly: their
+`signMessage` returns base58, which is the format the verify endpoint
+expects.
 
 ### `GATEWAY_TRUSTED_PROXIES` — required when behind an L7 proxy
 
