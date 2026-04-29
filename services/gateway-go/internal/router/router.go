@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/auth"
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/graph"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
 )
@@ -67,6 +68,14 @@ type Config struct {
 	// gateway runs without a database connection (e.g. in tests that only
 	// exercise the chassis).
 	API *handlers.API
+
+	// GraphQL, when non-nil, is the GraphQL handler introduced in
+	// M4 (#89). Mounted at /graphql for queries / mutations and
+	// /graphql (websocket upgrade) for subscriptions. Absent when the
+	// gateway is started without a Postgres pool — Query and
+	// Subscription resolvers both need a Store, so a missing API
+	// implies no GraphQL surface either.
+	GraphQL *graph.Handler
 }
 
 // DefaultConfig returns a Config suitable for local development.
@@ -221,6 +230,22 @@ func NewWithConfigLifecycle(
 	if cfg.API != nil {
 		api := engine.Group("/api/v1")
 		cfg.API.Register(api)
+	}
+
+	// M4 (#89) — GraphQL surface. Mounted at the engine root rather
+	// than under /api/v1 because:
+	//   1. The websocket upgrade path uses GET /graphql, which would
+	//      collide with a REST resource of the same name; a top-level
+	//      mount avoids that.
+	//   2. SDK consumers conventionally hit `/graphql` rather than
+	//      `/api/v1/graphql`, so the unprefixed path is the one
+	//      developers expect to find.
+	// As with /api/v1 the surface is read-only by design; deployments
+	// that want auth gating should attach their own middleware to the
+	// returned group before invoking Register.
+	if cfg.GraphQL != nil {
+		gqlGroup := engine.Group("")
+		cfg.GraphQL.Register(gqlGroup)
 	}
 
 	// Legacy /health probe retained for backwards compatibility with M2/M3

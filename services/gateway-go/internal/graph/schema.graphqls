@@ -1,0 +1,160 @@
+# Titular GraphQL schema (M4 #89).
+#
+# This is the read-model surface that mirrors the REST endpoints under
+# /api/v1 and adds NATS-backed subscriptions. The shape intentionally
+# matches store.Agent / store.Trade / store.Job 1:1 so the resolver
+# layer is a thin marshaller — every field has a literal twin in
+# internal/store/store.go and changes there must be propagated here.
+#
+# Conventions:
+#   - All ids are returned as ID!. Numeric pks are lowercased decimal
+#     strings; the slug variant for agents is "kind:agent_id".
+#   - Numeric uint256 values that originate on chain are exposed as the
+#     custom BigInt scalar (decimal string) so JS clients do not lose
+#     precision past 2^53. Block numbers fit comfortably in Int.
+#   - Hex addresses, tx hashes, and hex-encoded ids use the Bytes/
+#     Address/Bytes32 scalars, all of which serialise as the canonical
+#     0x-prefixed lowercase hex form.
+#   - Time is RFC 3339 in UTC.
+
+scalar BigInt
+scalar Address
+scalar Bytes32
+scalar Time
+
+# AgentKind mirrors store.AgentKind. We expose it as an enum so clients
+# get compile-time safety; the underlying string values are pinned to
+# match the Postgres enum.
+enum AgentKind {
+  launchpad
+  acp
+}
+
+# JobStatus mirrors store.JobPhase. Same enum-vs-string trade-off as
+# AgentKind: enums on the wire keep typed clients honest.
+enum JobStatus {
+  created
+  funded
+  active
+  completed
+  cancelled
+  disputed
+  released
+  resolved
+}
+
+type Agent {
+  id: ID!
+  kind: AgentKind!
+  agentId: BigInt
+  controller: Address
+  creator: Address
+  metadataUri: String
+  capabilities: BigInt
+  blockNumber: Int!
+  txHash: Bytes32!
+  logIndex: Int!
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type Trade {
+  id: ID!
+  agentTokenPK: Int
+  side: String!
+  trader: Address!
+  curve: Address!
+  quoteIn: BigInt
+  agentOut: BigInt
+  agentIn: BigInt
+  quoteOut: BigInt
+  fee: BigInt!
+  blockNumber: Int!
+  txHash: Bytes32!
+  logIndex: Int!
+  createdAt: Time!
+}
+
+type Job {
+  id: ID!
+  onChainId: BigInt!
+  cloneAddress: Address
+  agentPK: Int
+  agentId: BigInt
+  principal: Address!
+  jobType: Int!
+  token: Address
+  budget: BigInt!
+  deadline: Time
+  phase: JobStatus!
+  resultUri: String
+  blockNumber: Int!
+  txHash: Bytes32!
+  logIndex: Int!
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type Stats {
+  totalAgents: Int!
+  totalJobs: Int!
+  totalTrades: Int!
+  lastBlockIndexed: Int!
+}
+
+# Page wrappers — concrete types per entity rather than a generic
+# `Page<T>` because GraphQL has no generics. Each carries the same
+# opaque cursor format produced by store.EncodeCursor.
+type AgentPage {
+  data: [Agent!]!
+  nextCursor: String
+}
+
+type TradePage {
+  data: [Trade!]!
+  nextCursor: String
+}
+
+type JobPage {
+  data: [Job!]!
+  nextCursor: String
+}
+
+type Query {
+  # agent looks up a single agent by primary key (numeric string) or by
+  # the slug "kind:agent_id". Returns null when not found rather than
+  # throwing — null is the canonical GraphQL form for "absent".
+  agent(id: ID!): Agent
+
+  agents(cursor: String, limit: Int, kind: AgentKind): AgentPage!
+
+  trades(
+    cursor: String
+    limit: Int
+    agentToken: Address
+    from: Time
+    to: Time
+  ): TradePage!
+
+  jobs(cursor: String, limit: Int, status: JobStatus): JobPage!
+
+  stats: Stats!
+}
+
+# Subscriptions are NATS-backed and filter on the publisher subject
+# grammar (agents.*, jobs.*, trades.*). When the gateway is launched
+# without a NATS URL the resolvers return a closed channel so clients
+# see an immediate "no data" rather than a hang.
+type Subscription {
+  # newTrade fires once per trades.* publish. agentToken, when set,
+  # filters server-side to a single bonding-curve token (case
+  # insensitive 0x hex match).
+  newTrade(agentToken: Address): Trade!
+
+  # jobUpdated fires on any jobs.* publish for the given job id; when
+  # id is null the subscriber sees every job event.
+  jobUpdated(id: ID): Job!
+
+  # agentRegistered fires on agents.registered only.
+  agentRegistered: Agent!
+}

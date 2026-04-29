@@ -52,6 +52,24 @@
 //	                              mounts the M4 read-only REST endpoints
 //	                              under /api/v1. When unset, /api/v1 is
 //	                              not mounted.
+//	GATEWAY_NATS_URL              NATS connection URL
+//	                              (nats://host:port). When set together
+//	                              with GATEWAY_DATABASE_URL, the gateway
+//	                              mounts the M4 GraphQL surface at
+//	                              /graphql with NATS-backed
+//	                              subscriptions; when unset, GraphQL
+//	                              subscriptions resolve against an
+//	                              immediately-closed channel (queries
+//	                              still work).
+//	GATEWAY_GRAPHQL_PLAYGROUND    "true" enables GET /graphql/playground
+//	                              (GraphiQL UI). Default false; do NOT
+//	                              enable in production-facing
+//	                              deployments.
+//	GATEWAY_GRAPHQL_MAX_DEPTH     positive integer; caps the nesting
+//	                              depth of incoming GraphQL operations
+//	                              before they reach the executor.
+//	                              Default 10; introspection queries
+//	                              (__schema / __type) bypass the cap.
 package main
 
 import (
@@ -68,11 +86,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nats-io/nats.go"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/auth"
+	"github.com/0xDevNinja/titular/services/gateway-go/internal/graph"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/handlers"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/middleware"
 	"github.com/0xDevNinja/titular/services/gateway-go/internal/router"
@@ -116,6 +136,11 @@ func main() {
 		log.Fatal().Err(err).Msg("invalid database configuration")
 	}
 
+	gqlHandler, natsClose, err := buildGraphQLHandler(apiHandlers, corsCfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid graphql configuration")
+	}
+
 	cfg := router.Config{
 		Logger:         log.Logger,
 		Service:        service,
@@ -125,6 +150,7 @@ func main() {
 		Auth:           authHandlers,
 		SIWS:           siwsHandlers,
 		API:            apiHandlers,
+		GraphQL:        gqlHandler,
 	}
 
 	built := router.NewWithConfigLifecycle(cfg, agentHandlers, jobHandlers)
@@ -175,6 +201,88 @@ func main() {
 	if dbClose != nil {
 		dbClose()
 	}
+
+	// Close the NATS connection backing the GraphQL subscription bus.
+	if natsClose != nil {
+		natsClose()
+	}
+}
+
+// buildGraphQLHandler wires the GraphQL surface introduced in M4 (#89).
+// It is a no-op (returns nil, nil, nil) when the gateway is launched
+// without GATEWAY_DATABASE_URL — Query and Subscription resolvers both
+// need a Store to be useful, and silently mounting a query-less endpoint
+// would mask deployment misconfiguration.
+//
+// GATEWAY_NATS_URL is optional: when unset, subscription resolvers fall
+// back to graph.NilBus() so subscriber clients see a clean
+// end-of-stream rather than a hang. Queries are unaffected.
+//
+// GATEWAY_GRAPHQL_PLAYGROUND defaults to off; setting it to "true" mounts
+// the GET /graphql/playground GraphiQL UI for local development. Do
+// not enable in production-facing deployments — the UI lets anyone
+// browse the schema and execute arbitrary queries against the
+// read-only surface.
+func buildGraphQLHandler(api *handlers.API, cors middleware.CORSConfig) (*graph.Handler, func(), error) {
+	if api == nil {
+		// No store -> no GraphQL surface. Returning nil is the
+		// "feature off" signal the router config recognises.
+		return nil, nil, nil
+	}
+
+	resolver := &graph.Resolver{Store: api.Store}
+
+	var natsClose func()
+	if url := strings.TrimSpace(os.Getenv("GATEWAY_NATS_URL")); url != "" {
+		nc, err := nats.Connect(url, nats.Timeout(5*time.Second))
+		if err != nil {
+			return nil, nil, errors.New("GATEWAY_NATS_URL: " + err.Error())
+		}
+		bus, err := graph.NewNATSBus(nc)
+		if err != nil {
+			nc.Close()
+			return nil, nil, err
+		}
+		resolver.Bus = bus
+		natsClose = nc.Close
+	}
+
+	schema, err := graph.NewSchema(resolver)
+	if err != nil {
+		if natsClose != nil {
+			natsClose()
+		}
+		return nil, nil, err
+	}
+	h, err := graph.NewHandler(schema, resolver)
+	if err != nil {
+		if natsClose != nil {
+			natsClose()
+		}
+		return nil, nil, err
+	}
+	if v := strings.TrimSpace(os.Getenv("GATEWAY_GRAPHQL_PLAYGROUND")); strings.EqualFold(v, "true") {
+		h.EnablePlayground = true
+	}
+
+	// Origin enforcement on the websocket transport. Browsers DO NOT
+	// apply CORS preflight to WebSocket upgrades, so the gateway's CORS
+	// middleware that protects POST /graphql gives this path no
+	// protection. Re-use the same allowed-origins list (and credential
+	// posture) so operators only have one knob to tune.
+	h.AllowedOrigins = cors.AllowedOrigins
+	h.AllowCredentials = cors.AllowCredentials
+	h.AllowReflectedOrigins = cors.AllowReflectedOrigins
+
+	// Optional depth cap. Anything > 0 wins; otherwise the handler
+	// falls back to its package default (defaultMaxQueryDepth).
+	if v := strings.TrimSpace(os.Getenv("GATEWAY_GRAPHQL_MAX_DEPTH")); v != "" {
+		if n, perr := strconv.Atoi(v); perr == nil && n > 0 {
+			h.MaxQueryDepth = n
+		}
+	}
+
+	return h, natsClose, nil
 }
 
 // buildAPIHandlers opens a Postgres pool from GATEWAY_DATABASE_URL and wires
