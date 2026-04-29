@@ -88,6 +88,19 @@
 //	                              lets anyone browse the schema and
 //	                              issue arbitrary requests against the
 //	                              read-only surface.
+//	GATEWAY_METRICS_ADDR          listen address for the Prometheus
+//	                              /metrics endpoint (e.g. ":9090"). When
+//	                              unset, the Prometheus surface is not
+//	                              mounted and the gateway emits metrics
+//	                              only via the OTLP push pipeline. The
+//	                              metrics listener is intentionally
+//	                              separate from GATEWAY_ADDR so an
+//	                              internal Prometheus scraper reaches
+//	                              /metrics without going through the
+//	                              SIWE auth wall, the rate limiter or
+//	                              CORS — and so the public load
+//	                              balancer can keep the metrics port
+//	                              unexposed.
 //
 // @title           Titular Gateway API
 // @version         0.1.0-alpha
@@ -175,6 +188,24 @@ func main() {
 
 	addr := envOr("GATEWAY_ADDR", ":8080")
 	service := envOr("GATEWAY_SERVICE", "gateway")
+	metricsAddr := strings.TrimSpace(os.Getenv("GATEWAY_METRICS_ADDR"))
+
+	// Prometheus reader is wired BEFORE OTel.Init so the same
+	// MeterProvider feeds both pipelines. AttachPrometheusReader is a
+	// no-op when GATEWAY_METRICS_ADDR is unset — we only build the
+	// reader when the operator has asked for the surface. The
+	// resulting reader, when present, lands on the SDK MeterProvider
+	// that Init constructs a few lines below.
+	var promShutdown func() error
+	if metricsAddr != "" {
+		if _, _, perr := observability.AttachPrometheusReader(); perr != nil {
+			// Soft-fail: losing /metrics is bad but not fatal —
+			// gateway request handling is independent. Log loud
+			// enough that the on-call notices.
+			log.Warn().Err(perr).Msg("prometheus exporter init failed; /metrics disabled")
+			metricsAddr = ""
+		}
+	}
 
 	// OTel must come up BEFORE any subsystem that may emit a span
 	// (the pgx tracer is wired the moment the pool is built; the gin
@@ -196,6 +227,23 @@ func main() {
 		}
 		log.Warn().Err(err).Msg("otel init failed (continuing)")
 		otelShutdown = func(context.Context) error { return nil }
+	}
+
+	// If Init was skipped (no OTLP endpoint) but the operator still
+	// wanted /metrics, fall back to PrometheusHandler which builds a
+	// minimal Prom-only MeterProvider. PrometheusHandler is also
+	// idempotent against AttachPrometheusReader, so this same call is
+	// safe in the OTLP-enabled path.
+	var metricsHandler http.Handler
+	if metricsAddr != "" {
+		h, sd, herr := observability.PrometheusHandler()
+		if herr != nil {
+			log.Warn().Err(herr).Msg("prometheus handler init failed; /metrics disabled")
+			metricsAddr = ""
+		} else {
+			metricsHandler = h
+			promShutdown = sd
+		}
 	}
 
 	agentHandlers, err := handlers.NewAgentHandlers()
@@ -278,6 +326,40 @@ func main() {
 		},
 	}
 
+	// Dedicated /metrics listener on GATEWAY_METRICS_ADDR. We use a
+	// separate http.Server instead of mounting the handler on the
+	// main gin engine because:
+	//
+	//   - The main engine is fronted by the SIWE auth wall, the
+	//     rate limiter, and CORS — none of which a Prometheus
+	//     scraper needs (or wants) to traverse.
+	//   - The metrics port is typically NOT exposed on the public
+	//     load balancer; running it on a different listener makes
+	//     that operational separation a hard, file-level setting
+	//     instead of a per-route middleware skip.
+	//   - A misbehaving handler in the main engine cannot starve
+	//     scrapes (and vice versa) because the listeners run on
+	//     independent goroutines.
+	//
+	// Timeouts are tighter than the main server: a Prometheus scrape
+	// is a single GET that completes in milliseconds. Read/Write 5s
+	// is generous and still well below the default Prom 10s scrape
+	// timeout, so a stuck handler reports as a Prom timeout (with
+	// metric prom_target_metadata_cache_entries… surfacing the
+	// failure) rather than as a gateway resource leak.
+	var metricsSrv *http.Server
+	if metricsAddr != "" && metricsHandler != nil {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metricsHandler)
+		metricsSrv = &http.Server{
+			Addr:         metricsAddr,
+			Handler:      mux,
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 5 * time.Second,
+			IdleTimeout:  30 * time.Second,
+		}
+	}
+
 	// Graceful shutdown on SIGINT / SIGTERM.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -289,6 +371,19 @@ func main() {
 		}
 	}()
 
+	if metricsSrv != nil {
+		go func() {
+			log.Info().Str("addr", metricsAddr).Msg("gateway /metrics listening")
+			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				// Metrics listener crash is not fatal: log and let the
+				// main server keep running. An on-call sees the
+				// missing /metrics surface via Prometheus's `up{}`
+				// gauge dropping to 0.
+				log.Error().Err(err).Msg("metrics server error")
+			}
+		}()
+	}
+
 	<-quit
 	log.Info().Msg("shutting down")
 
@@ -297,6 +392,16 @@ func main() {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error().Err(err).Msg("graceful shutdown failed")
+	}
+
+	// Tear the metrics listener down on the same shutdown deadline.
+	// Doing this AFTER the main server's Shutdown so any final
+	// in-flight handlers can still record samples that are then
+	// served on the very last scrape.
+	if metricsSrv != nil {
+		if err := metricsSrv.Shutdown(ctx); err != nil {
+			log.Warn().Err(err).Msg("metrics shutdown")
+		}
 	}
 
 	// Stop background goroutines owned by the router (rate-limit sweeper).
@@ -338,6 +443,15 @@ func main() {
 	if otelShutdown != nil {
 		if err := otelShutdown(context.Background()); err != nil {
 			log.Warn().Err(err).Msg("otel shutdown")
+		}
+	}
+	// Prometheus reader teardown runs after the OTel meter provider
+	// shutdown so any last metric flushed during otelShutdown is
+	// scrapable on the closing /metrics request. Safe to call when
+	// the surface was disabled — promShutdown is nil in that case.
+	if promShutdown != nil {
+		if err := promShutdown(); err != nil {
+			log.Warn().Err(err).Msg("prometheus shutdown")
 		}
 	}
 }

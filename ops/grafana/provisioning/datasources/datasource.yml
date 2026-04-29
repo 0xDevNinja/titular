@@ -1,0 +1,19 @@
+# Grafana datasource provisioning (M4 #94).
+#
+# Auto-installs the Prometheus datasource at first boot of the Grafana
+# container under ops/docker-compose.observability.yml. The `url`
+# resolves over the compose network — operators running Grafana
+# outside the compose stack override this file at the bind mount.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: GET
+      timeInterval: 5s

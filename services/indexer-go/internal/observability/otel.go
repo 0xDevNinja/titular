@@ -119,10 +119,20 @@ func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 		_ = tp.Shutdown(ctx)
 		return noopShutdown, fmt.Errorf("observability: metric exporter: %w", err)
 	}
-	mp := sdkmetric.NewMeterProvider(
+	// Build the MeterProvider with the OTLP periodic reader, plus —
+	// when the operator has already wired the Prometheus pull surface
+	// via AttachPrometheusReader (M4 #94) — the Prometheus reader.
+	// Both readers share the instruments registered against the
+	// MeterProvider so a single counter shows up in OTLP exports AND
+	// on the /metrics endpoint without double-instrumentation.
+	mpOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
-	)
+	}
+	if promReader, ok := takeAttachedPrometheusReader(); ok {
+		mpOpts = append(mpOpts, sdkmetric.WithReader(promReader))
+	}
+	mp := sdkmetric.NewMeterProvider(mpOpts...)
 
 	otel.SetTracerProvider(tp)
 	otel.SetMeterProvider(mp)

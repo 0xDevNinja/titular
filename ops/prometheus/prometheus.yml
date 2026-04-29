@@ -1,0 +1,47 @@
+# prometheus.yml — local + ops Prometheus scrape configuration for the
+# Titular observability stack (M4 #94).
+#
+# Two scrape jobs:
+#
+#   * gateway   — pulls /metrics from services/gateway-go.
+#   * indexer   — pulls /metrics from services/indexer-go.
+#
+# Targets are written for the docker-compose stack under
+# ops/docker-compose.observability.yml; operators running outside the
+# compose network override the `targets` list with their own
+# host:port pairs.
+#
+# A 5s scrape interval is the standard Grafana-friendly default and
+# matches the 5s ReadTimeout we set on the gateway's metrics listener
+# so a stuck handler shows up as a Prom timeout rather than as a
+# silent drop.
+
+global:
+  scrape_interval: 5s
+  scrape_timeout: 4s
+  external_labels:
+    deployment: local
+
+scrape_configs:
+  - job_name: gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - gateway:9090
+        labels:
+          service: gateway
+
+  - job_name: indexer
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - indexer:9091
+        labels:
+          service: indexer
+
+  # Self-scrape so the dashboards can render the prometheus_… meta
+  # metrics (up{}, scrape_duration_seconds) for both targets above.
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090

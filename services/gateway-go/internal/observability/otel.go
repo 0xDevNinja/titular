@@ -166,10 +166,19 @@ func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 		_ = tp.Shutdown(ctx)
 		return noopShutdown, fmt.Errorf("observability: metric exporter: %w", err)
 	}
-	mp := sdkmetric.NewMeterProvider(
+	// Build the MeterProvider with the OTLP periodic reader, plus —
+	// when the operator has already wired the Prometheus surface via
+	// AttachPrometheusReader (M4 #94) — the Prometheus pull reader.
+	// Both readers feed off the same instruments, so a single
+	// otel.Meter("…").Int64Counter("foo") shows up in both pipelines.
+	mpOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
-	)
+	}
+	if promReader, ok := takeAttachedPrometheusReader(); ok {
+		mpOpts = append(mpOpts, sdkmetric.WithReader(promReader))
+	}
+	mp := sdkmetric.NewMeterProvider(mpOpts...)
 
 	// --- Globals -----------------------------------------------------------
 	otel.SetTracerProvider(tp)
