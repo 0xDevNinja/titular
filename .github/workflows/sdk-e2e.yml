@@ -66,6 +66,13 @@ jobs:
       - name: install deps
         run: pnpm install --frozen-lockfile
 
+      # `@titular/acp-sdk-e2e` imports `@titular/acp-sdk` as a
+      # workspace dep; vitest needs the built `dist/` to resolve
+      # the import (the workspace package's `exports` map points at
+      # `./dist/...`). Build the SDK before the suite runs.
+      - name: build acp-sdk
+        run: pnpm -F @titular/acp-sdk build
+
       # `E2E_INTEGRATION=1` is the explicit opt-in gate read by
       # `_skip.ts`; without it every `describe` early-skips so the
       # default `test` workflow stays cheap. We set it inline rather
