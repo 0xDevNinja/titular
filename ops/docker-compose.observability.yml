@@ -1,0 +1,91 @@
+# docker-compose.observability.yml — local Prometheus + Grafana stack
+# for the Titular gateway and indexer (M4 #94).
+#
+# What it brings up:
+#
+#   * prometheus  — Prometheus 2.x scraping the gateway and indexer
+#                   /metrics endpoints. Config under
+#                   ops/prometheus/prometheus.yml. Mounted read-only;
+#                   edits go through a PR against this repo, not via
+#                   the running container.
+#   * grafana     — Grafana 10 with the Prometheus datasource and
+#                   Titular dashboards auto-provisioned at boot from
+#                   ops/grafana/. Default admin/admin login (set
+#                   GF_SECURITY_ADMIN_PASSWORD on the host before
+#                   `docker compose up` to override; this stack is
+#                   intended for local + ops-internal use only).
+#
+# How to run:
+#
+#   # 1. Start the gateway and/or indexer separately on the host with
+#   #    GATEWAY_METRICS_ADDR=:9090 / INDEXER_METRICS_ADDR=:9091.
+#   # 2. Start the observability stack:
+#   #    docker compose -f ops/docker-compose.observability.yml up
+#   # 3. Browse Grafana at http://localhost:3000 — the Titular
+#   #    dashboards auto-load.
+#
+# Security: this compose file is local/ops-internal only. It binds
+# Grafana on port 3000 with the default admin/admin credentials so a
+# fresh clone works out of the box. Operators running this on shared
+# infrastructure MUST override GF_SECURITY_ADMIN_PASSWORD and gate
+# the host port behind their own ingress.
+#
+# Networking: the stack creates a bridge network `titular-obs` and
+# expects to reach the gateway / indexer at host.docker.internal so
+# scraping works regardless of whether the services are running in
+# their own compose stack, in `go run`, or as a built binary on the
+# host. Operators on Linux without host-gateway support set the
+# PROM_EXTRA_HOST env var to the host's docker0 address; otherwise
+# the default `host-gateway` alias resolves correctly on Docker
+# Desktop and recent Linux Docker engines.
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: titular-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=24h"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - titular-obs
+    extra_hosts:
+      # Lets the prom container reach `gateway:9090` and `indexer:9091`
+      # via the host's loopback when the services are run with
+      # `go run` outside compose. The aliases match the targets in
+      # prometheus.yml so the same config works in both flavours.
+      - "gateway:host-gateway"
+      - "indexer:host-gateway"
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: titular-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GF_SECURITY_ADMIN_PASSWORD:-admin}"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - titular-obs
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  titular-obs:
+    driver: bridge

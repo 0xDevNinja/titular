@@ -1,0 +1,22 @@
+# Grafana dashboard provisioning (M4 #94).
+#
+# Auto-loads every JSON file under ops/grafana/dashboards/ as a
+# read-only dashboard at Grafana boot. We pin `editable: false` so an
+# operator who lands on the dashboard via the running container cannot
+# accidentally drift the panels away from the version-controlled
+# source — edits MUST go through a PR against this directory.
+
+apiVersion: 1
+
+providers:
+  - name: titular
+    orgId: 1
+    folder: Titular
+    type: file
+    disableDeletion: true
+    editable: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false
