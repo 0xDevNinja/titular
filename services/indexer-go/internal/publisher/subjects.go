@@ -170,9 +170,10 @@ func AllSubjects() map[string]string {
 }
 
 // validatePrefix sanity-checks that a configured subject starts with one
-// of the [SubjectPrefixes]. It is invoked at package init via the test
-// suite (not at runtime) — any drift here is a programmer error caught
-// long before deploy.
+// of the [SubjectPrefixes]. It runs once at package init over every
+// entry in [eventSubjects]; any drift surfaces as a panic at process
+// start rather than as a silent route to a non-existent stream subject
+// at the first matching log.
 func validatePrefix(subject string) error {
 	for _, p := range SubjectPrefixes {
 		// `agents.>` matches `agents.foo`, `agents.foo.bar`, etc.
@@ -184,4 +185,17 @@ func validatePrefix(subject string) error {
 		}
 	}
 	return fmt.Errorf("publisher: subject %q does not match any registered prefix", subject)
+}
+
+// init validates that every entry in [eventSubjects] is covered by one
+// of the registered top-level prefixes. Panicking here turns a typo
+// like `agent.registered` (singular) into a process-start failure, not
+// a silent run-time `ErrUnmappedEvent` after the publisher is wired
+// up. The cost is one map iteration at import time.
+func init() {
+	for name, subj := range eventSubjects {
+		if err := validatePrefix(subj); err != nil {
+			panic(fmt.Sprintf("publisher: event %q -> %s", name, err))
+		}
+	}
 }

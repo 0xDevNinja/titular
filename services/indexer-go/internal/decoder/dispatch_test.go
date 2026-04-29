@@ -1,6 +1,7 @@
 package decoder_test
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"testing"
@@ -888,12 +889,12 @@ func Test_DispatchAndHandle_Success(t *testing.T) {
 	}
 
 	var seen *decoder.DecodedEvent
-	h := decoder.HandlerFunc(func(e decoder.DecodedEvent) error {
+	h := decoder.HandlerFunc(func(_ context.Context, e decoder.DecodedEvent) error {
 		v := e
 		seen = &v
 		return nil
 	})
-	handled, err := decoder.DispatchAndHandle(log, h)
+	handled, err := decoder.DispatchAndHandle(context.Background(), log, h)
 	if err != nil {
 		t.Fatalf("DispatchAndHandle: %v", err)
 	}
@@ -911,11 +912,11 @@ func Test_DispatchAndHandle_Success(t *testing.T) {
 func Test_DispatchAndHandle_UnknownIsSkip(t *testing.T) {
 	bogus := common.HexToHash("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	called := false
-	h := decoder.HandlerFunc(func(decoder.DecodedEvent) error {
+	h := decoder.HandlerFunc(func(context.Context, decoder.DecodedEvent) error {
 		called = true
 		return nil
 	})
-	handled, err := decoder.DispatchAndHandle(types.Log{Topics: []common.Hash{bogus}}, h)
+	handled, err := decoder.DispatchAndHandle(context.Background(), types.Log{Topics: []common.Hash{bogus}}, h)
 	if err != nil {
 		t.Fatalf("DispatchAndHandle: %v", err)
 	}
@@ -938,9 +939,9 @@ func Test_DispatchAndHandle_HandlerError(t *testing.T) {
 		Data:   encodeData(t, parsed, "HookDeregistered"),
 	}
 	target := errors.New("downstream broken")
-	h := decoder.HandlerFunc(func(decoder.DecodedEvent) error { return target })
+	h := decoder.HandlerFunc(func(context.Context, decoder.DecodedEvent) error { return target })
 
-	handled, err := decoder.DispatchAndHandle(log, h)
+	handled, err := decoder.DispatchAndHandle(context.Background(), log, h)
 	if handled {
 		t.Error("handled = true, want false on handler error")
 	}
@@ -952,7 +953,7 @@ func Test_DispatchAndHandle_HandlerError(t *testing.T) {
 // Test_DispatchAndHandle_NilHandler asserts that a nil handler is a programmer
 // error and surfaces explicitly rather than nil-deref'ing.
 func Test_DispatchAndHandle_NilHandler(t *testing.T) {
-	_, err := decoder.DispatchAndHandle(types.Log{}, nil)
+	_, err := decoder.DispatchAndHandle(context.Background(), types.Log{}, nil)
 	if err == nil {
 		t.Fatal("expected error for nil handler")
 	}

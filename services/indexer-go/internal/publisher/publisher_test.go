@@ -1,6 +1,7 @@
 package publisher_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -198,19 +199,19 @@ func Test_OnEvent_RoundTripPerPrefix(t *testing.T) {
 			wantSubject: "agents.registered",
 			sub:         subAgents,
 			check: func(t *testing.T, raw json.RawMessage) {
-				// big.Int marshals as a JSON number, so we read into
-				// json.RawMessage and substring-check rather than typing
-				// to string.
+				// big.Int is wire-encoded as a quoted decimal string —
+				// see [bigIntStr] in publisher.go for the rationale
+				// (JS consumers lose precision past 2^53).
 				var got struct {
-					AgentId     json.RawMessage `json:"AgentId"`
-					Controller  string          `json:"Controller"`
-					MetadataURI string          `json:"MetadataURI"`
+					AgentId     string `json:"AgentId"`
+					Controller  string `json:"Controller"`
+					MetadataURI string `json:"MetadataURI"`
 				}
 				if err := json.Unmarshal(raw, &got); err != nil {
 					t.Fatalf("decode payload: %v", err)
 				}
-				if !strings.Contains(string(got.AgentId), "7") {
-					t.Errorf("AgentId = %s, want contains 7", got.AgentId)
+				if got.AgentId != "7" {
+					t.Errorf("AgentId = %q, want %q", got.AgentId, "7")
 				}
 				if got.MetadataURI != "ipfs://bafy" {
 					t.Errorf("MetadataURI = %q", got.MetadataURI)
@@ -237,17 +238,17 @@ func Test_OnEvent_RoundTripPerPrefix(t *testing.T) {
 			sub:         subJobs,
 			check: func(t *testing.T, raw json.RawMessage) {
 				var got struct {
-					JobId  json.RawMessage `json:"JobId"`
-					Amount json.RawMessage `json:"Amount"`
+					JobId  string `json:"JobId"`
+					Amount string `json:"Amount"`
 				}
 				if err := json.Unmarshal(raw, &got); err != nil {
 					t.Fatalf("decode payload: %v", err)
 				}
-				if !strings.Contains(string(got.JobId), "42") {
-					t.Errorf("JobId = %s, want contains 42", got.JobId)
+				if got.JobId != "42" {
+					t.Errorf("JobId = %q, want %q", got.JobId, "42")
 				}
-				if !strings.Contains(string(got.Amount), "1000000") {
-					t.Errorf("Amount = %s, want 1000000", got.Amount)
+				if got.Amount != "1000000" {
+					t.Errorf("Amount = %q, want %q", got.Amount, "1000000")
 				}
 			},
 		},
@@ -273,8 +274,8 @@ func Test_OnEvent_RoundTripPerPrefix(t *testing.T) {
 			sub:         subTokens,
 			check: func(t *testing.T, raw json.RawMessage) {
 				var got struct {
-					Schedule      uint8           `json:"Schedule"`
-					PrimaryAmount json.RawMessage `json:"PrimaryAmount"`
+					Schedule      uint8  `json:"Schedule"`
+					PrimaryAmount string `json:"PrimaryAmount"`
 				}
 				if err := json.Unmarshal(raw, &got); err != nil {
 					t.Fatalf("decode payload: %v", err)
@@ -282,8 +283,8 @@ func Test_OnEvent_RoundTripPerPrefix(t *testing.T) {
 				if got.Schedule != 2 {
 					t.Errorf("Schedule = %d, want 2", got.Schedule)
 				}
-				if !strings.Contains(string(got.PrimaryAmount), "900") {
-					t.Errorf("PrimaryAmount = %s, want contains 900", got.PrimaryAmount)
+				if got.PrimaryAmount != "900" {
+					t.Errorf("PrimaryAmount = %q, want %q", got.PrimaryAmount, "900")
 				}
 			},
 		},
@@ -291,7 +292,7 @@ func Test_OnEvent_RoundTripPerPrefix(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if err := pub.OnEvent(c.event); err != nil {
+			if err := pub.OnEvent(context.Background(), c.event); err != nil {
 				t.Fatalf("OnEvent: %v", err)
 			}
 
@@ -378,7 +379,7 @@ func Test_OnEvent_DedupsByTxAndLogIndex(t *testing.T) {
 
 	// Publish twice with the same dedup ID.
 	for i := 0; i < 2; i++ {
-		if err := pub.OnEvent(event); err != nil {
+		if err := pub.OnEvent(context.Background(), event); err != nil {
 			t.Fatalf("OnEvent #%d: %v", i, err)
 		}
 	}
@@ -410,7 +411,7 @@ func Test_OnEvent_UnmappedEvent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		err = pub.OnEvent(decoder.DecodedEvent{Name: "Mystery.Event", Raw: types.Log{}})
+		err = pub.OnEvent(context.Background(), decoder.DecodedEvent{Name: "Mystery.Event", Raw: types.Log{}})
 		if !errors.Is(err, publisher.ErrUnmappedEvent) {
 			t.Fatalf("err = %v, want ErrUnmappedEvent", err)
 		}
@@ -421,7 +422,7 @@ func Test_OnEvent_UnmappedEvent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		if err := pub.OnEvent(decoder.DecodedEvent{Name: "Mystery.Event", Raw: types.Log{}}); err != nil {
+		if err := pub.OnEvent(context.Background(), decoder.DecodedEvent{Name: "Mystery.Event", Raw: types.Log{}}); err != nil {
 			t.Errorf("err = %v, want nil with SkipUnmapped", err)
 		}
 	})
@@ -460,71 +461,153 @@ func Test_AllSubjects_PrefixesAndUniqueness(t *testing.T) {
 }
 
 // Test_AllSubjects_CoversDispatchTable asserts every event the decoder
-// knows about has a subject mapping. Without this, a regen that adds a
-// binding (and a decoder entry) but forgets the subject would silently
-// hit the [ErrUnmappedEvent] path in production.
+// knows about has a subject mapping. Driven off [decoder.KnownEvents]
+// (the live dispatch table) rather than a duplicated literal list, so a
+// regen that adds a binding + decoder but forgets the subject mapping
+// fails CI here. The reverse — a stale subject for an event the decoder
+// no longer emits — is also surfaced by comparing set sizes.
 func Test_AllSubjects_CoversDispatchTable(t *testing.T) {
-	type ev struct {
-		qualified string
-	}
-	// Mirror of decoder.registry — keep in lock-step with
-	// decoders.go::init. The structural check (count + set membership)
-	// is what protects against drift; if a future regen adds an event
-	// here, the test must fail until the subject table is updated.
-	expected := []string{
-		"AgentRegistry.AgentRegistered",
-		"AgentRegistry.MetadataUpdated",
-		"AgentRegistry.CapabilitiesUpdated",
-		"AgentRegistry.ActiveStatusChanged",
-		"AgentRegistry.ScorePosted",
-		"AgentRegistry.ControllerTransferProposed",
-		"AgentRegistry.ControllerTransferAccepted",
-		"AgentRegistry.ControllerTransferCancelled",
-		"Job.JobInitialised",
-		"Job.AgentAccepted",
-		"Job.ResultSubmitted",
-		"Job.ResultApproved",
-		"Job.ResultRejected",
-		"Job.JobCompleted",
-		"Job.JobCancelled",
-		"Job.DisputeRaised",
-		"Job.DisputeResolved",
-		"Job.EvaluatorAssigned",
-		"JobFactory.JobCreated",
-		"JobFactory.ImplementationUpdated",
-		"JobFactory.DefaultArbiterUpdated",
-		"Escrow.Funded",
-		"Escrow.Released",
-		"Escrow.Refunded",
-		"FeeSplitter.FeeSplit",
-		"FeeSplitter.TreasuryUpdated",
-		"FeeSplitter.BuybackBurnerUpdated",
-		"BuybackBurner.BuybackAndBurn",
-		"BuybackBurner.RouterUpdated",
-		"BuybackBurner.SwapPathUpdated",
-		"BuybackBurner.MinTituOutUpdated",
-		"HookRegistry.HookRegistered",
-		"HookRegistry.HookDeregistered",
+	known := decoder.KnownEvents()
+	subjects := publisher.AllSubjects()
+
+	if got, want := len(subjects), len(known); got != want {
+		t.Errorf("subject table size = %d, want %d (decoder.KnownEvents)", got, want)
 	}
 
-	subjects := publisher.AllSubjects()
-	if got, want := len(subjects), len(expected); got != want {
-		t.Errorf("subject table size = %d, want %d", got, want)
-	}
-	for _, name := range expected {
+	for _, name := range known {
 		if _, ok := publisher.SubjectFor(name); !ok {
-			t.Errorf("missing subject mapping for %q", name)
+			t.Errorf("missing subject mapping for decoder event %q", name)
+		}
+	}
+
+	// Reverse direction: every entry in the subject table must
+	// correspond to a decoder. A leftover from a renamed event would
+	// hit ErrUnmappedEvent at runtime — surface it here.
+	knownSet := make(map[string]struct{}, len(known))
+	for _, n := range known {
+		knownSet[n] = struct{}{}
+	}
+	for name := range subjects {
+		if _, ok := knownSet[name]; !ok {
+			t.Errorf("subject mapping %q has no decoder", name)
 		}
 	}
 }
 
 // Test_DedupID_Format pins the wire format. Any change here is a
-// breaking deploy and must be intentional.
+// breaking deploy and must be intentional. The format is lowercase so
+// callers that capitalise hex differently still hash to the same key.
 func Test_DedupID_Format(t *testing.T) {
-	got := publisher.DedupID("0xdeadbeef", 12)
+	got := publisher.DedupID("0xDeadBeef", 12)
 	want := "0xdeadbeef:12"
 	if got != want {
 		t.Fatalf("DedupID = %q, want %q", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// bigint precision: payloads with values > 2^53 must round-trip without loss
+// ---------------------------------------------------------------------------
+
+// Test_OnEvent_BigIntStringEncoding asserts that large *big.Int payload
+// fields (here 2^200) survive the JetStream round-trip as decimal
+// strings and reconstruct exactly via big.Int.SetString. This catches
+// the regression we'd hit if a future refactor reverted to the default
+// big.Int.MarshalJSON, which emits a JSON number and silently truncates
+// past 2^53 in JS consumers (gateway, SDK).
+func Test_OnEvent_BigIntStringEncoding(t *testing.T) {
+	_, js := runServer(t)
+	if err := publisher.EnsureStream(js, publisher.StreamOptions{
+		Storage: nats.MemoryStorage,
+	}); err != nil {
+		t.Fatalf("EnsureStream: %v", err)
+	}
+
+	pub, err := publisher.New(js, publisher.Options{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	sub, err := js.PullSubscribe("jobs.funded", "jobs-bigint", nats.AckExplicit())
+	if err != nil {
+		t.Fatalf("PullSubscribe: %v", err)
+	}
+
+	// 2^200 is well above the 2^53 boundary where JSON numbers lose
+	// precision in IEEE-754 doubles. We reuse Escrow.Funded because
+	// it has both an indexed *big.Int (JobId) and a non-indexed one
+	// (Amount), so the test covers both reflection paths.
+	huge := new(big.Int).Lsh(big.NewInt(1), 200)
+	want := huge.Text(10)
+
+	event := decoder.DecodedEvent{
+		Name: "Escrow.Funded",
+		Payload: &contractabi.EscrowFunded{
+			Depositor: common.HexToAddress("0xBBBB000000000000000000000000000000000002"),
+			JobId:     huge,
+			Token:     common.HexToAddress("0xCCCC000000000000000000000000000000000003"),
+			Amount:    huge,
+		},
+		Raw: types.Log{
+			BlockNumber: 999,
+			TxHash:      common.HexToHash("0xbig"),
+			Index:       0,
+		},
+	}
+
+	if err := pub.OnEvent(context.Background(), event); err != nil {
+		t.Fatalf("OnEvent: %v", err)
+	}
+
+	msgs, err := sub.Fetch(1, nats.MaxWait(2*time.Second))
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("Fetch returned %d messages", len(msgs))
+	}
+	msg := msgs[0]
+	if err := msg.Ack(); err != nil {
+		t.Fatalf("Ack: %v", err)
+	}
+
+	// The raw JSON for the payload must contain the value as a quoted
+	// string, never as a bare number. We check for `"<dec>"` to fail
+	// loudly if the encoder regresses to a numeric form.
+	rawJSON := string(msg.Data)
+	wantQuoted := `"` + want + `"`
+	if !strings.Contains(rawJSON, wantQuoted) {
+		t.Errorf("payload JSON does not contain quoted decimal:\n  want substring: %s\n  got: %s",
+			wantQuoted, rawJSON)
+	}
+	// And it must NOT contain the value as a bare number — i.e. the
+	// digits followed by a comma or `}` instead of a closing quote.
+	if strings.Contains(rawJSON, want+",") || strings.Contains(rawJSON, want+"}") {
+		t.Errorf("payload JSON contains bare numeric for big.Int: %s", rawJSON)
+	}
+
+	// Round-trip: pull the strings out and rebuild the big.Int.
+	var env struct {
+		Payload struct {
+			JobId  string `json:"JobId"`
+			Amount string `json:"Amount"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(msg.Data, &env); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+	for label, got := range map[string]string{"JobId": env.Payload.JobId, "Amount": env.Payload.Amount} {
+		if got != want {
+			t.Errorf("%s = %q, want %q", label, got, want)
+		}
+		round, ok := new(big.Int).SetString(got, 10)
+		if !ok {
+			t.Errorf("%s: SetString(%q) failed", label, got)
+			continue
+		}
+		if round.Cmp(huge) != 0 {
+			t.Errorf("%s: round-trip mismatch: got %s, want %s", label, round.Text(10), want)
+		}
 	}
 }
 
