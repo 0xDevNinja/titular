@@ -320,6 +320,17 @@ func TestAPIGetAgent_BySlug(t *testing.T) {
 	}
 }
 
+// Parity with listAgents/listTrades/listJobs: an unknown query parameter on
+// the per-id detail endpoint must produce a 400 rather than be silently
+// ignored. Catches client typos like ?include=bar where include isn't real.
+func TestAPIGetAgent_UnknownQueryParam(t *testing.T) {
+	fs := &fakeStore{agents: makeAgents(1)}
+	rec := mustGet(t, newAPI(t, fs), "/api/v1/agents/1?bogus=1")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want 400", rec.Code)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // /api/v1/trades
 // ---------------------------------------------------------------------------

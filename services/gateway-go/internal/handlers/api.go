@@ -41,8 +41,13 @@ func (a *API) Register(rg *gin.RouterGroup) {
 // allowedQueryParams lists the query keys each endpoint understands. We
 // reject unknown keys with 400 to surface client bugs early — silently
 // ignoring them lets typos turn into mysterious "no filter applied" results.
+//
+// `agent` (singular) is the per-id detail endpoint. It takes no query
+// parameters today, but the entry exists so getAgent can call
+// rejectUnknownParams uniformly with the list endpoints.
 var allowedQueryParams = map[string]map[string]struct{}{
 	"agents": {"cursor": {}, "limit": {}, "kind": {}},
+	"agent":  {},
 	"trades": {"cursor": {}, "limit": {}, "agent_token": {}, "from": {}, "to": {}},
 	"jobs":   {"cursor": {}, "limit": {}, "status": {}},
 }
@@ -110,6 +115,9 @@ func (a *API) listAgents(c *gin.Context) {
 // getAgent serves GET /api/v1/agents/:id. The :id is either a numeric primary
 // key or the kind-qualified slug "kind:agent_id".
 func (a *API) getAgent(c *gin.Context) {
+	if rejectUnknownParams(c, allowedQueryParams["agent"]) {
+		return
+	}
 	id := c.Param("id")
 	agent, err := a.Store.GetAgent(c.Request.Context(), id)
 	if err != nil {

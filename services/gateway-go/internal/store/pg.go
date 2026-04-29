@@ -526,6 +526,16 @@ func (s *PG) ListJobs(ctx context.Context, p ListJobsParams) (Page[Job], error) 
 // last_block_indexed as GREATEST(MAX(trades), MAX(jobs)) — the indexer track
 // will gain a checkpoint table later, at which point this can be a single
 // SELECT against that.
+//
+// PERF: the three COUNT(*) subqueries do a parallel seq scan per call. This
+// is fine for v1 — agents/trades/jobs are all small (<<1M rows during the
+// alpha) and the endpoint is uncached but called rarely. Once any of these
+// tables crosses ~1M rows, swap the COUNT(*) for the planner's row estimate:
+//
+//   SELECT reltuples::bigint
+//     FROM pg_class WHERE relname IN ('agents','jobs','trades')
+//
+// which is O(1) at the cost of being slightly stale (refreshed by autovacuum).
 func (s *PG) Stats(ctx context.Context) (Stats, error) {
 	const q = `
 		SELECT
