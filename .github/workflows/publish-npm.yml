@@ -67,6 +67,12 @@ jobs:
           # echoing the token anywhere.
           registry-url: "https://registry.npmjs.org"
 
+      # Provenance attestation requires npm CLI >= 9.5. The npm bundled with
+      # node 22 satisfies this today, but pinning to `npm@latest` keeps the
+      # workflow resilient to base-image drift on the hosted runner.
+      - name: pin npm cli for provenance
+        run: npm i -g npm@latest
+
       - name: install
         run: pnpm install --frozen-lockfile
 
@@ -76,6 +82,9 @@ jobs:
       - name: build cli
         run: pnpm -F @titular/acp-cli build
 
+      # `pnpm publish` honours `--provenance` directly (pnpm >= 8.6); it does
+      # NOT read the `NPM_CONFIG_PROVENANCE` env var that `npm publish` does,
+      # so we deliberately do not set it here.
       - name: publish @titular/acp-sdk
         if: ${{ inputs.dry-run == false }}
         run: |
@@ -86,7 +95,6 @@ jobs:
             --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
 
       - name: publish @titular/acp-cli
         if: ${{ inputs.dry-run == false }}
@@ -98,7 +106,6 @@ jobs:
             --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
 
       - name: dry-run @titular/acp-sdk
         if: ${{ inputs.dry-run == true }}
