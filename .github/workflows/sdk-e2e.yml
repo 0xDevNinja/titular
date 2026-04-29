@@ -1,0 +1,84 @@
+---
+# sdk-e2e — opt-in integration tests for `@titular/acp-sdk` against a
+# real anvil chain plus a Postgres-backed gateway-go.
+#
+# Why a separate workflow:
+#
+#   * The default `test` workflow runs on every push / PR with
+#     `E2E_INTEGRATION` unset, which makes the suite a no-op (file-load
+#     skip via `_skip.ts`). The fully-wired version below docker-pulls
+#     `postgres:16-alpine` and boots anvil + the gateway, so it pays
+#     ~3-5 minutes of setup we don't want on diffs that don't touch
+#     the SDK or its e2e harness.
+#   * Failures here represent SDK ↔ indexer ↔ gateway contract drift,
+#     not unit-level correctness regressions; the right place to
+#     surface them is a manual trigger plus an auto-trigger gated on
+#     SDK / e2e path changes so reviewers see green/red pre-merge.
+#
+# Triggers:
+#
+#   * `workflow_dispatch` — manual run, pickable from the Actions tab.
+#   * `pull_request` with paths filter — runs on PRs that touch the
+#     SDK source or the e2e harness so we catch breakage before merge
+#     without paying the cost on every PR.
+#
+# Mirrors the `gateway-loadtest.yml` shape (per #92): 20-minute cap,
+# `cancel-in-progress` per ref, `permissions: contents: read`.
+
+name: sdk-e2e
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "packages/acp-sdk-ts/**"
+      - "packages/acp-sdk-e2e/**"
+      - ".github/workflows/sdk-e2e.yml"
+
+concurrency:
+  # One in-flight e2e run per ref; a second push during a run cancels
+  # the older invocation rather than queueing them. The suite is
+  # point-in-time correctness, so a stale run is never the most useful
+  # one.
+  group: sdk-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: acp-sdk e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.6.2"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: install deps
+        run: pnpm install --frozen-lockfile
+
+      # `@titular/acp-sdk-e2e` imports `@titular/acp-sdk` as a
+      # workspace dep; vitest needs the built `dist/` to resolve
+      # the import (the workspace package's `exports` map points at
+      # `./dist/...`). Build the SDK before the suite runs.
+      - name: build acp-sdk
+        run: pnpm -F @titular/acp-sdk build
+
+      # `E2E_INTEGRATION=1` is the explicit opt-in gate read by
+      # `_skip.ts`; without it every `describe` early-skips so the
+      # default `test` workflow stays cheap. We set it inline rather
+      # than at the workflow level so a contributor reading the YAML
+      # sees the gate at the call site of the test command.
+      - name: run e2e suite
+        env:
+          E2E_INTEGRATION: "1"
+        run: pnpm -F @titular/acp-sdk-e2e test
