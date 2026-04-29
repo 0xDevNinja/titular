@@ -28,7 +28,7 @@ import (
 // anvilDevKey is anvil's account 0 private key. Stable across versions and
 // safe to embed: it is the public dev key shipped with foundry, never used
 // outside ephemeral test instances. Address: 0xf39Fd6e51aad88F6F4ce6aB8827279cfFFb92266.
-const anvilDevKey = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+const anvilDevKey = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" // gitleaks:allow
 
 // anvilChainID is the default chain id anvil exposes on `--chain-id` left
 // at its zero value. Pinned here so tx signing matches.
