@@ -32,9 +32,15 @@ import (
 // CORS / RateLimit are passed through verbatim to the corresponding
 // middlewares. See middleware.CORSConfig and middleware.RateLimitConfig.
 //
-// TrustedProxies, when non-nil, is forwarded to gin's SetTrustedProxies.
-// Leaving it nil applies gin's default of trusting all proxies; deployments
-// that terminate TLS at a known LB should set this explicitly.
+// TrustedProxies is forwarded to gin's SetTrustedProxies.
+//
+// SECURITY: Gin's default is to trust ALL proxies, which makes c.ClientIP()
+// honour any X-Forwarded-For header — trivially spoofable, and a direct
+// rate-limit / log-attribution bypass. We therefore default to trusting NO
+// proxies (TrustedProxies == nil → SetTrustedProxies([]string{})), so
+// c.ClientIP() falls back to c.Request.RemoteAddr, which is unspoofable.
+// Operators running behind a known L7 proxy MUST set this explicitly via
+// GATEWAY_TRUSTED_PROXIES.
 type Config struct {
 	Logger         zerolog.Logger
 	Service        string
@@ -73,11 +79,31 @@ func NewWithHandlers(agentHandlers *handlers.AgentHandlers, jobHandlers *handler
 	return NewWithConfig(DefaultConfig(), agentHandlers, jobHandlers)
 }
 
+// Built bundles the constructed handler with any lifecycle hooks owned by
+// the router (today: the rate-limiter sweeper goroutine). Callers that care
+// about clean shutdown should use NewWithConfigLifecycle and invoke Stop on
+// SIGINT/SIGTERM. The simpler NewWithConfig discards the hook for callers
+// who do not.
+type Built struct {
+	Handler http.Handler
+	stop    func()
+}
+
+// Stop releases any lifecycle resources (currently: the rate-limit sweeper).
+// Safe to call multiple times.
+func (b Built) Stop() {
+	if b.stop != nil {
+		b.stop()
+	}
+}
+
 // NewWithConfig builds the gateway router with full control over middleware
 // configuration. The middleware order, from outer to inner, is:
 //
-//  1. Recovery     — wraps everything so panics surface as 500.
-//  2. RequestID    — guarantees the rest of the chain has an id.
+//  1. RequestID    — outermost so every downstream record (including panic
+//     recovery) carries the id.
+//  2. Recovery     — converts panics from the rest of the chain into a 500
+//     and logs with the request id assigned in (1).
 //  3. Log          — observes the resolved status, including 4xx/5xx flips.
 //  4. CORS         — emits headers / handles preflight before rate-limit so
 //     legitimate preflight requests cannot be limited away.
@@ -93,27 +119,46 @@ func NewWithConfig(
 	agentHandlers *handlers.AgentHandlers,
 	jobHandlers *handlers.JobHandlers,
 ) http.Handler {
+	return NewWithConfigLifecycle(cfg, agentHandlers, jobHandlers).Handler
+}
+
+// NewWithConfigLifecycle is the lifecycle-aware variant. The returned Built
+// carries a Stop() method that shuts down the rate-limit sweeper (and any
+// future background goroutines). cmd/gateway wires this into its
+// SIGINT/SIGTERM path.
+func NewWithConfigLifecycle(
+	cfg Config,
+	agentHandlers *handlers.AgentHandlers,
+	jobHandlers *handlers.JobHandlers,
+) Built {
 	engine := gin.New()
 
-	// Trust nothing by default beyond what the caller specified.
-	if cfg.TrustedProxies != nil {
-		_ = engine.SetTrustedProxies(cfg.TrustedProxies)
+	// SECURITY: When TrustedProxies is nil (env unset), trust NO proxies so
+	// c.ClientIP() ignores spoofable X-Forwarded-For headers and falls back
+	// to c.Request.RemoteAddr. Operators behind a known L7 proxy must set
+	// GATEWAY_TRUSTED_PROXIES explicitly (see service README).
+	proxies := cfg.TrustedProxies
+	if proxies == nil {
+		proxies = []string{}
 	}
+	_ = engine.SetTrustedProxies(proxies)
 
 	logger := cfg.Logger
 	if reflect.DeepEqual(logger, zerolog.Logger{}) {
 		logger = log.Logger
 	}
 
-	engine.Use(middleware.Recovery(logger))
+	limiter := middleware.NewRateLimiter(cfg.RateLimit)
+
 	engine.Use(middleware.RequestID())
+	engine.Use(middleware.Recovery(logger))
 	engine.Use(middleware.Log(middleware.LogConfig{
 		Logger:    logger,
 		Service:   cfg.Service,
 		SkipPaths: []string{"/healthz"},
 	}))
 	engine.Use(middleware.CORS(cfg.CORS))
-	engine.Use(middleware.RateLimit(cfg.RateLimit))
+	engine.Use(limiter.Handler)
 
 	engine.GET("/healthz", func(c *gin.Context) {
 		c.Header("Content-Type", "application/json; charset=utf-8")
@@ -133,7 +178,7 @@ func NewWithConfig(
 		c.String(http.StatusOK, `{"status":"ok"}`)
 	})
 
-	return engine
+	return Built{Handler: engine, stop: limiter.Stop}
 }
 
 // buildV1Chi assembles the chi router that serves the M2 (agents) and M3

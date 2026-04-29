@@ -21,10 +21,17 @@ import (
 // SkipPaths is a small set of exact path strings that should not be logged
 // (typically health probe endpoints that would otherwise drown out real
 // traffic).
+//
+// Level, when set to a non-NoLevel value, overrides the level of the supplied
+// Logger for this middleware only — useful when the request log should be
+// noisier (Debug) or quieter (Warn) than the rest of the binary. Leaving
+// Level at its zero value (zerolog.NoLevel) inherits the parent logger's
+// level.
 type LogConfig struct {
 	Logger    zerolog.Logger
 	Service   string
 	SkipPaths []string
+	Level     zerolog.Level
 }
 
 // Log returns a Gin middleware that emits one structured log line per request
@@ -57,6 +64,12 @@ func Log(cfg LogConfig) gin.HandlerFunc {
 	// detect "caller forgot to wire one in" and substitute a discard sink.
 	if reflect.DeepEqual(logger, zerolog.Logger{}) {
 		logger = zerolog.New(io.Discard)
+	}
+
+	// Per-middleware level override. zerolog.NoLevel is the zero value, which
+	// leaves the parent logger's level untouched.
+	if cfg.Level != zerolog.NoLevel {
+		logger = logger.Level(cfg.Level)
 	}
 
 	service := cfg.Service

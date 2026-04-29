@@ -138,6 +138,66 @@ func TestRateLimit_EmptyKeyFailsOpen(t *testing.T) {
 	}
 }
 
+func TestRateLimit_RetryAfterReflectsRefill(t *testing.T) {
+	cases := []struct {
+		name string
+		rps  float64
+		want string
+	}{
+		// 1 rps → ceil(1/1) = 1 second between tokens.
+		{"1 rps -> 1 second", 1, "1"},
+		// 0.5 rps → 1 token every 2 seconds.
+		{"0.5 rps -> 2 seconds", 0.5, "2"},
+		// 0.1 rps → 1 token every 10 seconds.
+		{"0.1 rps -> 10 seconds", 0.1, "10"},
+		// >1 rps still floors at 1 (Retry-After cannot be sub-second).
+		{"100 rps -> 1 second floor", 100, "1"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRateLimitEngine(middleware.RateLimitConfig{
+				RPS:     tc.rps,
+				Burst:   1,
+				KeyFunc: fixedKey,
+			})
+
+			// First request consumes the only token.
+			req := httptest.NewRequest(http.MethodGet, "/x", nil)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("warmup: got %d, want 200", rec.Code)
+			}
+
+			// Second is rate-limited.
+			req = httptest.NewRequest(http.MethodGet, "/x", nil)
+			rec = httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != http.StatusTooManyRequests {
+				t.Fatalf("got %d, want 429", rec.Code)
+			}
+			if got := rec.Header().Get("Retry-After"); got != tc.want {
+				t.Fatalf("Retry-After: got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRateLimiter_StopReleasesSweeper(t *testing.T) {
+	// Calling Stop multiple times must be safe and must not panic.
+	rl := middleware.NewRateLimiter(middleware.RateLimitConfig{
+		RPS:   1,
+		Burst: 1,
+	})
+	rl.Stop()
+	rl.Stop()
+
+	// Disabled limiter (zero config) also has a no-op Stop.
+	disabled := middleware.NewRateLimiter(middleware.RateLimitConfig{})
+	disabled.Stop()
+}
+
 // contains is a tiny helper that avoids importing strings just for one call.
 func contains(haystack, needle string) bool {
 	for i := 0; i+len(needle) <= len(haystack); i++ {

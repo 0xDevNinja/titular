@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"math"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -113,11 +115,27 @@ func (rl *rateLimiter) sweep() {
 	}
 }
 
-// stop terminates the background sweeper. Exposed for tests; production code
-// runs the limiter for the lifetime of the process and lets it exit with the
-// program.
-func (rl *rateLimiter) stop() {
+// Stop terminates the background sweeper goroutine. Safe to call multiple
+// times. Wire it into the server's graceful-shutdown path so the goroutine
+// exits cleanly rather than leaking until process exit.
+func (rl *rateLimiter) Stop() {
 	rl.stopOnce.Do(func() { close(rl.stopCh) })
+}
+
+// RateLimiter bundles the gin handler with a Stop() hook so callers can shut
+// the background sweeper down on graceful shutdown. The zero value is unsafe;
+// always construct via RateLimit.
+type RateLimiter struct {
+	Handler gin.HandlerFunc
+	stop    func()
+}
+
+// Stop tears down any background goroutines owned by the limiter. Safe to
+// call multiple times and on a no-op limiter (RPS/Burst <= 0).
+func (r RateLimiter) Stop() {
+	if r.stop != nil {
+		r.stop()
+	}
 }
 
 // RateLimit returns a Gin middleware that enforces a per-key token-bucket
@@ -126,9 +144,19 @@ func (rl *rateLimiter) stop() {
 //
 // When RPS or Burst is non-positive the middleware is a no-op — useful for
 // tests that need a router without the limiter active.
+//
+// RateLimit DISCARDS the lifecycle Stop hook; callers that care about clean
+// shutdown should use NewRateLimiter and call Stop() explicitly. Today only
+// cmd/gateway needs this.
 func RateLimit(cfg RateLimitConfig) gin.HandlerFunc {
+	return NewRateLimiter(cfg).Handler
+}
+
+// NewRateLimiter is the lifecycle-aware constructor. Use this when the caller
+// wants to call Stop() on graceful shutdown; otherwise prefer RateLimit.
+func NewRateLimiter(cfg RateLimitConfig) RateLimiter {
 	if cfg.RPS <= 0 || cfg.Burst <= 0 {
-		return func(c *gin.Context) { c.Next() }
+		return RateLimiter{Handler: func(c *gin.Context) { c.Next() }}
 	}
 
 	keyFn := cfg.KeyFunc
@@ -138,7 +166,13 @@ func RateLimit(cfg RateLimitConfig) gin.HandlerFunc {
 
 	rl := newRateLimiter(cfg)
 
-	return func(c *gin.Context) {
+	// Retry-After is advertised in seconds. We round up the bucket refill
+	// interval (1/RPS) to the nearest whole second, with a floor of 1 so we
+	// never advertise an impossibly aggressive retry budget. Computed once at
+	// middleware-construction time.
+	retryAfter := strconv.Itoa(retryAfterSeconds(cfg.RPS))
+
+	handler := func(c *gin.Context) {
 		key := keyFn(c)
 		if key == "" {
 			// Unable to resolve a key — fail open rather than punish callers.
@@ -147,11 +181,25 @@ func RateLimit(cfg RateLimitConfig) gin.HandlerFunc {
 		}
 		if !rl.allow(key) {
 			c.Header("Content-Type", "application/json; charset=utf-8")
-			c.Header("Retry-After", "1")
+			c.Header("Retry-After", retryAfter)
 			c.String(http.StatusTooManyRequests, rateLimitBody)
 			c.Abort()
 			return
 		}
 		c.Next()
 	}
+	return RateLimiter{Handler: handler, stop: rl.Stop}
+}
+
+// retryAfterSeconds returns max(1, ceil(1/rps)). Inputs of <= 0 fall back to
+// 1 — defence in depth; the caller already gates on RPS > 0.
+func retryAfterSeconds(rps float64) int {
+	if rps <= 0 {
+		return 1
+	}
+	v := int(math.Ceil(1.0 / rps))
+	if v < 1 {
+		return 1
+	}
+	return v
 }

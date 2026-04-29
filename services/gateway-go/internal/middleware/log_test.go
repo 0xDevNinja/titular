@@ -138,3 +138,41 @@ func TestLog_DefaultsServiceWhenEmpty(t *testing.T) {
 		t.Fatalf("default service: got %v, want gateway", got)
 	}
 }
+
+func TestLog_LevelOverrideSuppressesQuieterEvents(t *testing.T) {
+	// Parent logger inherits the package default (no level filter) so the
+	// 200 INFO line below would normally render. With LogConfig.Level set to
+	// Warn, the middleware's logger is filtered to >=warn — INFO must drop.
+	logger, buf := captureLogger()
+	r := gin.New()
+	r.Use(middleware.Log(middleware.LogConfig{
+		Logger: logger,
+		Level:  zerolog.WarnLevel,
+	}))
+	r.GET("/x", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if buf.Len() != 0 {
+		t.Fatalf("expected no log line at warn-level filter for 200; got %q", buf.String())
+	}
+
+	// 5xx still escalates above the floor and should render.
+	r2 := gin.New()
+	logger2, buf2 := captureLogger()
+	r2.Use(middleware.Log(middleware.LogConfig{
+		Logger: logger2,
+		Level:  zerolog.WarnLevel,
+	}))
+	r2.GET("/x", func(c *gin.Context) { c.Status(http.StatusInternalServerError) })
+
+	req2 := httptest.NewRequest(http.MethodGet, "/x", nil)
+	rec2 := httptest.NewRecorder()
+	r2.ServeHTTP(rec2, req2)
+
+	if buf2.Len() == 0 {
+		t.Fatal("expected a log line for 500 at warn-level filter; got none")
+	}
+}

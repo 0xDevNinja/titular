@@ -4,14 +4,21 @@
 // suitable for direct deployment in containerised environments without a
 // config file.
 //
-//	GATEWAY_ADDR              listen address; default ":8080"
-//	GATEWAY_SERVICE           service tag emitted in structured logs; default "gateway"
-//	GATEWAY_CORS_ORIGINS      comma-separated list of permitted CORS origins;
-//	                          empty disables CORS, "*" enables wildcard
-//	GATEWAY_CORS_CREDENTIALS  "true" to advertise Access-Control-Allow-Credentials
-//	GATEWAY_RATE_LIMIT_RPS    per-ip token-bucket refill rate; 0 disables limiting
-//	GATEWAY_RATE_LIMIT_BURST  per-ip burst capacity; 0 disables limiting
-//	GATEWAY_TRUSTED_PROXIES   comma-separated CIDRs forwarded to gin.SetTrustedProxies
+//	GATEWAY_ADDR                  listen address; default ":8080"
+//	GATEWAY_SERVICE               service tag emitted in structured logs; default "gateway"
+//	GATEWAY_CORS_ORIGINS          comma-separated list of permitted CORS origins;
+//	                              empty disables CORS, "*" enables wildcard
+//	GATEWAY_CORS_CREDENTIALS      "true" to advertise Access-Control-Allow-Credentials
+//	GATEWAY_CORS_REFLECT_ORIGINS  "true" to allow the unsafe wildcard+credentials
+//	                              combination (echoes the request Origin); leave
+//	                              unset in production
+//	GATEWAY_RATE_LIMIT_RPS        per-ip token-bucket refill rate; 0 disables limiting
+//	GATEWAY_RATE_LIMIT_BURST      per-ip burst capacity; 0 disables limiting
+//	GATEWAY_TRUSTED_PROXIES       comma-separated CIDRs forwarded to
+//	                              gin.SetTrustedProxies. SECURITY: leaving this
+//	                              UNSET trusts NO proxies (unspoofable client
+//	                              IP). Operators behind a known L7 proxy MUST
+//	                              set this explicitly.
 package main
 
 import (
@@ -53,17 +60,23 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to initialise job handlers")
 	}
 
+	corsCfg := buildCORSConfig()
+	if err := corsCfg.Validate(); err != nil {
+		log.Fatal().Err(err).Msg("invalid CORS configuration")
+	}
+
 	cfg := router.Config{
 		Logger:         log.Logger,
 		Service:        service,
-		CORS:           buildCORSConfig(),
+		CORS:           corsCfg,
 		RateLimit:      buildRateLimitConfig(),
 		TrustedProxies: parseList(os.Getenv("GATEWAY_TRUSTED_PROXIES")),
 	}
 
+	built := router.NewWithConfigLifecycle(cfg, agentHandlers, jobHandlers)
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      router.NewWithConfig(cfg, agentHandlers, jobHandlers),
+		Handler:      built.Handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -92,6 +105,9 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error().Err(err).Msg("graceful shutdown failed")
 	}
+
+	// Stop background goroutines owned by the router (rate-limit sweeper).
+	built.Stop()
 }
 
 // envOr returns the value of the named env var, falling back to def when
@@ -129,6 +145,9 @@ func buildCORSConfig() middleware.CORSConfig {
 	cfg.AllowedOrigins = parseList(os.Getenv("GATEWAY_CORS_ORIGINS"))
 	if v := os.Getenv("GATEWAY_CORS_CREDENTIALS"); strings.EqualFold(v, "true") {
 		cfg.AllowCredentials = true
+	}
+	if v := os.Getenv("GATEWAY_CORS_REFLECT_ORIGINS"); strings.EqualFold(v, "true") {
+		cfg.AllowReflectedOrigins = true
 	}
 	return cfg
 }

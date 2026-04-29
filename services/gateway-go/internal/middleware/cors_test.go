@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -101,6 +102,9 @@ func TestCORS_WildcardWithCredentialsEchoesOrigin(t *testing.T) {
 	cfg := middleware.DefaultCORSConfig()
 	cfg.AllowedOrigins = []string{"*"}
 	cfg.AllowCredentials = true
+	// Opt in to the credentialed-reflector mode so CORS does not refuse the
+	// configuration. Production deployments should not enable this.
+	cfg.AllowReflectedOrigins = true
 	r := newCORSEngine(cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
@@ -114,6 +118,28 @@ func TestCORS_WildcardWithCredentialsEchoesOrigin(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
 		t.Fatalf("Allow-Credentials: got %q, want true", got)
 	}
+}
+
+func TestCORS_RejectsWildcardWithCredentialsByDefault(t *testing.T) {
+	cfg := middleware.DefaultCORSConfig()
+	cfg.AllowedOrigins = []string{"*"}
+	cfg.AllowCredentials = true
+	// AllowReflectedOrigins left at its zero value (false).
+
+	if _, err := middleware.NewCORS(cfg); err == nil {
+		t.Fatal("expected NewCORS to refuse wildcard+credentials, got nil err")
+	} else if !errors.Is(err, middleware.ErrCORSWildcardWithCredentials) {
+		t.Fatalf("expected ErrCORSWildcardWithCredentials, got %v", err)
+	}
+
+	// CORS (the panicking variant) should also refuse — recover and assert.
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected CORS to panic on unsafe config, got no panic")
+		}
+	}()
+	_ = middleware.CORS(cfg)
 }
 
 func TestCORS_NoOriginHeaderPassesThrough(t *testing.T) {

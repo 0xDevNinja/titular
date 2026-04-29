@@ -1,11 +1,23 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+)
+
+// ErrCORSWildcardWithCredentials is returned by CORSConfig.Validate when the
+// caller has combined an "*" allowed origin with AllowCredentials=true without
+// opting in via AllowReflectedOrigins. Reflecting any origin while honouring
+// cookies turns CORS into a permissive credentialed reflector — exactly the
+// configuration browsers warn about — so we refuse it by default and force
+// the operator to acknowledge the risk explicitly.
+var ErrCORSWildcardWithCredentials = errors.New(
+	"middleware: CORS wildcard origin with AllowCredentials=true is unsafe; " +
+		"set AllowReflectedOrigins=true to opt in, or list explicit origins",
 )
 
 // CORSConfig configures the CORS middleware.
@@ -17,17 +29,45 @@ import (
 //
 // AllowedMethods/AllowedHeaders are advertised on preflight responses.
 // AllowCredentials toggles the credentials header (only honoured when
-// AllowedOrigins is not the wildcard).
+// AllowedOrigins is not the wildcard, unless AllowReflectedOrigins is set —
+// see below).
+//
+// AllowReflectedOrigins, when true, permits the unsafe combination of
+// AllowedOrigins=["*"] + AllowCredentials=true. In that mode the middleware
+// echoes the request Origin verbatim and emits Access-Control-Allow-
+// Credentials. This is effectively a credentialed reflector and should only
+// be enabled in controlled local-dev / preview environments. Default is
+// false; CORSConfig.Validate refuses to start with the unsafe combination
+// otherwise.
 //
 // MaxAgeSeconds is advertised in Access-Control-Max-Age so browsers can cache
 // preflight results.
 type CORSConfig struct {
-	AllowedOrigins   []string
-	AllowedMethods   []string
-	AllowedHeaders   []string
-	ExposedHeaders   []string
-	AllowCredentials bool
-	MaxAgeSeconds    int
+	AllowedOrigins        []string
+	AllowedMethods        []string
+	AllowedHeaders        []string
+	ExposedHeaders        []string
+	AllowCredentials      bool
+	AllowReflectedOrigins bool
+	MaxAgeSeconds         int
+}
+
+// Validate returns a non-nil error when the configuration is unsafe and
+// callers have not explicitly opted in to the unsafe combination. Today the
+// only check is the wildcard+credentials anti-pattern; future audit findings
+// can be added here without touching every call-site.
+func (c CORSConfig) Validate() error {
+	hasWildcard := false
+	for _, o := range c.AllowedOrigins {
+		if strings.TrimSpace(o) == "*" {
+			hasWildcard = true
+			break
+		}
+	}
+	if hasWildcard && c.AllowCredentials && !c.AllowReflectedOrigins {
+		return ErrCORSWildcardWithCredentials
+	}
+	return nil
 }
 
 // DefaultCORSConfig returns a sensible default appropriate for local
@@ -57,8 +97,29 @@ func DefaultCORSConfig() CORSConfig {
 // permitted) and lets the chain continue.
 //
 // Origins are matched exactly. The wildcard entry "*" is honoured but, per
-// the CORS spec, never combined with credentials.
+// the CORS spec, never combined with credentials unless the caller has
+// explicitly opted in via AllowReflectedOrigins=true (see CORSConfig).
+//
+// CORS panics if cfg fails Validate() — call NewCORS for a non-panicking
+// error path. The panic is intentional: an unsafe CORS config at startup is
+// a configuration bug, not a runtime condition the request path should
+// recover from.
 func CORS(cfg CORSConfig) gin.HandlerFunc {
+	h, err := NewCORS(cfg)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
+// NewCORS is the error-returning constructor. Use this from cmd/* so an
+// unsafe configuration produces a graceful Fatal log line instead of a panic
+// stack.
+func NewCORS(cfg CORSConfig) (gin.HandlerFunc, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
 	allowed := make(map[string]struct{}, len(cfg.AllowedOrigins))
 	wildcard := false
 	for _, o := range cfg.AllowedOrigins {
@@ -91,7 +152,9 @@ func CORS(cfg CORSConfig) gin.HandlerFunc {
 		case wildcard && !cfg.AllowCredentials:
 			allow = "*"
 		case wildcard && cfg.AllowCredentials:
-			// With credentials we must echo the exact origin, not "*".
+			// Validated combo: caller has explicitly opted in via
+			// AllowReflectedOrigins. Echo the exact origin (cannot use "*"
+			// alongside credentials per the CORS spec).
 			allow = origin
 		default:
 			if _, ok := allowed[origin]; ok {
@@ -128,5 +191,5 @@ func CORS(cfg CORSConfig) gin.HandlerFunc {
 		}
 
 		c.Next()
-	}
+	}, nil
 }
