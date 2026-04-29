@@ -1,0 +1,118 @@
+---
+# gateway-loadtest — opt-in throughput / latency check for the
+# gateway-go read surface.
+#
+# Why a separate workflow:
+#
+#   * The default `test` workflow runs on every push / PR. The k6
+#     load test sustains 1k RPS for 60s plus a Postgres + gateway
+#     boot, which would dominate the per-PR pipeline for changes
+#     that have nothing to do with the gateway.
+#   * Failures here are SLO regressions, not correctness regressions,
+#     so the right place to surface them is a scheduled run + a
+#     manual trigger reviewers can flip on for gateway-pipeline PRs
+#     that touch the read path.
+#
+# Triggers:
+#
+#   * `workflow_dispatch` — manual run, pickable from the Actions
+#     tab. Inputs let reviewers shorten the run for quick smoke
+#     checks.
+#   * `schedule` — weekly Mondays 05:00 UTC. The cadence catches
+#     drift introduced by dependency / runtime bumps without
+#     spending CI minutes on every PR. Offset 30 minutes from the
+#     indexer load test (04:30 UTC) so they don't contend for
+#     shared runner capacity.
+#
+# Note: the test fails the run only on SLO violation (P99 >= 200ms,
+# error rate >= 1%, or sustained RPS < 95% of target). Smaller
+# regressions show up in the run log so reviewers can spot trends
+# without the workflow flipping red on every CI runner hiccup.
+
+name: gateway-loadtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_rps:
+        description: "Target sustained RPS"
+        required: false
+        default: "1000"
+      duration:
+        description: "Sustain window (k6 duration, e.g. 30s, 60s, 5m)"
+        required: false
+        default: "60s"
+      vus:
+        description: "Initial VU pool size"
+        required: false
+        default: "200"
+  schedule:
+    # Mondays at 05:00 UTC — picked outside US / EU business hours so
+    # the weekly run does not contend with PR CI for shared runner
+    # capacity. Offset 30 minutes from indexer-loadtest so the two
+    # don't fight over runners.
+    - cron: "0 5 * * 1"
+
+concurrency:
+  # Single in-flight load test per ref. A second push during a run
+  # cancels the older invocation rather than queueing them — the
+  # SLO check is point-in-time, so a stale run is never the most
+  # useful one.
+  group: gateway-loadtest-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  loadtest:
+    name: gateway-go k6 loadtest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Docker is preinstalled on ubuntu-latest, but Compose v2 is
+      # the new plugin-style binary. Verify it's available — if a
+      # future runner change drops it, fail loudly here rather than
+      # in the middle of bringing the stack up.
+      - name: docker compose version
+        run: docker compose version
+
+      # Bring the stack up and run k6 in one shot. --abort-on-
+      # container-exit tears the postgres / gateway containers down
+      # as soon as k6 exits; --exit-code-from k6 propagates k6's
+      # threshold-failure exit code (>= 99) so the workflow turns
+      # red on SLO breach.
+      #
+      # We deliberately do NOT use `docker compose up -d` followed
+      # by a separate `k6 run` step — the compose-driven shape gives
+      # us healthchecks and ordered startup for free, which keeps
+      # the workflow YAML small and reproducible against the local
+      # `docker compose up` invocation.
+      - name: gateway-go loadtest
+        working-directory: services/gateway-go/loadtest/k6
+        env:
+          K6_TARGET_RPS: ${{ github.event.inputs.target_rps || '1000' }}
+          K6_DURATION:   ${{ github.event.inputs.duration   || '60s'  }}
+          K6_VUS:        ${{ github.event.inputs.vus        || '200'  }}
+        run: |
+          docker compose up \
+            --abort-on-container-exit \
+            --exit-code-from k6
+
+      # Capture compose container logs on failure so the SLO breach
+      # can be triaged from the run summary alone — without this
+      # step, only the k6 stdout survives in the run log and the
+      # gateway / postgres side of a regression is invisible.
+      - name: dump container logs on failure
+        if: failure()
+        working-directory: services/gateway-go/loadtest/k6
+        run: |
+          docker compose logs --no-color --timestamps gateway || true
+          docker compose logs --no-color --timestamps postgres || true
+
+      - name: tear down
+        if: always()
+        working-directory: services/gateway-go/loadtest/k6
+        run: docker compose down -v --remove-orphans
